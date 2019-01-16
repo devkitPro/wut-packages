@@ -1,0 +1,50 @@
+# Maintainer: Ash Logan <ash [at] heyquark [dot] com>
+# Maintainer: WinterMute <davem@devkitpro.org>
+pkgname=wut-tools
+pkgver=1.0.0
+pkgrel=1
+pkgdesc='Tools for Nintendo WiiU homebrew development)'
+arch=('any')
+url="https://github.com/devkitpro/${pkgname}"
+license=('GPLv2')
+options=(!strip libtool staticlibs)
+source=("${url}/releases/download/v${pkgver}/${pkgname}-${pkgver}.tar.xz")
+sha256sums=('0b32b94b0366331cea8f72b2dde66042a92dfaf8b8ab504d514b7aa9bdcb441b')
+groups=('wiiu-dev')
+
+if [ "$CHOST" = "x86_64-w64-mingw32" ]; then
+  depends=('tool-dlls')
+fi
+
+crossbuild() {
+  if [ -n "$CHOST" ]; then
+
+    source ~/cross-build-$CHOST.sh
+    CONFIGURE_FLAGS="--host=$CHOST"
+
+  fi
+}
+
+build() {
+
+  cd $pkgname-$pkgver
+
+  crossbuild
+
+  ./configure $CONFIGURE_FLAGS --prefix=/opt/devkitpro/tools
+
+  make
+
+}
+
+package() {
+
+  cd $pkgname-$pkgver
+
+  crossbuild
+
+  make DESTDIR="$pkgdir" install-strip
+
+  install -Dm644 LICENSE.md "$pkgdir"/opt/devkitpro/licenses/$pkgname/COPYING
+  
+}
