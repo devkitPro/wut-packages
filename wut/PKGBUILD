@@ -1,0 +1,36 @@
+# Maintainer: Ash Logan <ash [at] heyquark [dot] com>
+# Maintainer: WinterMute <davem@devkitpro.org>
+
+_destdir=/opt/devkitpro/wut
+
+pkgname=wut
+pkgver=1.0.0_beta7
+pkgrel=1
+pkgdesc="Open-source Wii U Libraries"
+arch=('any')
+url="https://github.com/decaf-emu/wut"
+license=('GPLv2')
+groups=('wiiu-dev')
+
+depends=('devkitPPC' 'wut-tools')
+
+source=("https://github.com/decaf-emu/wut/archive/1.0.0-beta7.tar.gz" "wut.devkitpro.patch")
+sha256sums=('59d20cf8e7a8a00ce53759116f08f634798e158d7009f6b2cd180a220c8c5549' 'd7afadf7a32ed6e2c9d854f6d1a8cb8293b092179fed9690cd8b761220b561f9')
+options=("!strip" "staticlibs")
+
+build() {
+    cd wut-1.0.0-beta7
+
+    patch -Np1 -i $srcdir/wut.devkitpro.patch
+
+    mkdir -p build && cd build
+    cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$pkgdir/$_destdir" ..
+    make VERBOSE=1
+}
+
+package() {
+    cd wut-1.0.0-beta7/build
+
+    make install
+}
+

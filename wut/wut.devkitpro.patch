@@ -1,0 +1,55 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 853d2d3..5e18271 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -25,10 +25,6 @@ if(WUT_BUILD_DOCS)
+    add_subdirectory(docs)
+ endif()
+ 
+-if(WUT_BUILD_TOOLS)
+-   add_subdirectory(tools)
+-endif()
+-
+ if(WUT_BUILD_PPC)
+    if(NOT WUT_BUILD_TOOLS)
+       message(FATAL_ERROR "WUT_BUILD_PPC requires WUT_BUILD_TOOLS.")
+@@ -42,10 +38,9 @@ if(WUT_BUILD_PPC)
+       INSTALL_DIR "${WUT_STAGING}"
+       CMAKE_CACHE_ARGS
+          -DWUT_ROOT:filepath=${WUT_ROOT}
+-         -DWUT_RPLIMPORTGEN:filepath=$<TARGET_FILE:rplimportgen>
++	 -DWUT_RPLIMPORTGEN:filepath=/opt/devkitpro/tools/bin/rplimportgen
+          -DCMAKE_TOOLCHAIN_FILE:filepath=${WUT_TOOLCHAIN}
+          -DCMAKE_INSTALL_PREFIX:string=<INSTALL_DIR>
+-      DEPENDS rplimportgen
+       BUILD_ALWAYS 1)
+ 
+    externalproject_add(libraries
+diff --git a/share/wut.toolchain.cmake b/share/wut.toolchain.cmake
+index 6aebf02..37c3008 100644
+--- a/share/wut.toolchain.cmake
++++ b/share/wut.toolchain.cmake
+@@ -5,6 +5,12 @@ set(CMAKE_SYSTEM_VERSION 1)
+ set(CMAKE_SYSTEM_PROCESSOR "ppc")
+ set(CMAKE_CROSSCOMPILING 1)
+ 
++if(NOT DEFINED ENV{DEVKITPRO})
++   message(FATAL_ERROR "You must have defined DEVKITPRO before calling cmake.")
++endif()
++
++set(DEVKITPRO $ENV{DEVKITPRO})
++
+ find_program(DEVKITPPC_GCC NAMES powerpc-eabi-gcc)
+ if(DEVKITPPC_GCC)
+    get_filename_component(DEVKITPPC_BIN ${DEVKITPPC_GCC} DIRECTORY)
+@@ -47,8 +53,8 @@ set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+ set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+ 
+ # Tools
+-set(WUT_ELF2RPL "${WUT_ROOT}/bin/elf2rpl" CACHE PATH "")
+-set(WUT_RPLEXPORTGEN "${WUT_ROOT}/bin/rplexportgen" CACHE PATH "")
++set(WUT_ELF2RPL "${DEVKITPRO}/tools/bin/elf2rpl" CACHE PATH "")
++set(WUT_RPLEXPORTGEN "${DEVKITPRO}/tools/bin/rplexportgen" CACHE PATH "")
+ 
+ # Flags
+ set(WUT TRUE)
