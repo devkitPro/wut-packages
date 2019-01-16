@@ -1,0 +1,17 @@
+
+# Maintainer: Ash Logan <ash [at] heyquark [dot] com>
+# Maintainer: WinterMute <davem@devkitpro.org>
+pkgname=wiiu-pkg-config
+pkgver=0.28
+pkgrel=1
+pkgdesc='pkg-config wrapper (for Nintendo WiiU homebrew development)'
+arch=('any')
+url='http://devkitpro.org/'
+source=('pkg-config.in')
+sha256sums=('a7ef532057895fb64054c584eb501c2edb0919bb1f2bf04a846bb4df9c14a24f')
+groups=('wiiu-dev')
+
+package() {
+  install -d "$pkgdir"/opt/devkitpro/portlibs/wiiu/bin
+  cp "$srcdir"/pkg-config.in "$pkgdir"/opt/devkitpro/portlibs/wiiu/bin/powerpc-eabi-pkg-config
+}
