@@ -12,7 +12,7 @@ source=("${url}/releases/download/v${pkgver}/${pkgname}-${pkgver}.tar.xz")
 sha256sums=('0b32b94b0366331cea8f72b2dde66042a92dfaf8b8ab504d514b7aa9bdcb441b')
 groups=('wiiu-dev')
 
-if [ "$CHOST" = "x86_64-w64-mingw32" ]; then
+if [[ "$CHOST" == *"-w64-mingw32" ]]; then
   depends=('tool-dlls')
 fi
 
