@@ -6,7 +6,7 @@ export PKG_CONFIG_DIR=
 export PKG_CONFIG_PATH=
 export PKG_CONFIG_SYSROOT_DIR=
 
-export PKG_CONFIG_LIBDIR=${DEVKITPRO}/portlibs/wiiu/lib/pkgconfig ${DEVKITPRO}/portlibs/ppc/lib/pkgconfig
+export PKG_CONFIG_LIBDIR=${DEVKITPRO}/portlibs/wiiu/lib/pkgconfig:${DEVKITPRO}/portlibs/ppc/lib/pkgconfig
 
 exec pkg-config --static "$@"
 
