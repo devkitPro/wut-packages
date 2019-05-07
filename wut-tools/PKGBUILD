@@ -1,15 +1,15 @@
 # Maintainer: Ash Logan <ash [at] heyquark [dot] com>
 # Maintainer: WinterMute <davem@devkitpro.org>
 pkgname=wut-tools
-pkgver=1.0.0
+pkgver=1.1.0
 pkgrel=1
 pkgdesc='Tools for Nintendo WiiU homebrew development)'
 arch=('any')
 url="https://github.com/devkitpro/${pkgname}"
 license=('GPLv2')
 options=(!strip libtool staticlibs)
-source=("${url}/releases/download/v${pkgver}/${pkgname}-${pkgver}.tar.xz")
-sha256sums=('0b32b94b0366331cea8f72b2dde66042a92dfaf8b8ab504d514b7aa9bdcb441b')
+source=("${url}/releases/download/v${pkgver}/${pkgname}-${pkgver}.tar.gz")
+sha256sums=('68449a4cf7a6e7cac8bd5e5e524313db0a36f525578fe42511809f36c30560b3')
 groups=('wiiu-dev')
 
 if [[ "$CHOST" == *"-w64-mingw32" ]]; then
