@@ -4,8 +4,9 @@
 _destdir=/opt/devkitpro/wut
 
 pkgname=wut
-pkgver=1.0.0_beta8
-pkgrel=3
+pkgver=1.0.0_beta9
+_gittag=1.0.0-beta9
+pkgrel=1
 pkgdesc="Open-source Wii U Libraries"
 arch=('any')
 url="https://github.com/devkitPro/wut"
@@ -14,21 +15,19 @@ groups=('wiiu-dev')
 
 depends=('devkitPPC' 'wut-tools')
 
-source=("https://github.com/devkitPro/wut/archive/1.0.0-beta8.tar.gz")
-sha256sums=('95ce32365b489907a6d6b7a4350b046629dfa861e59ad5d659bfa807807f9bc2')
+source=("https://github.com/devkitPro/wut/archive/$_gittag.tar.gz")
+sha256sums=('a2fbc275c7f943ddb8b0822c9b76c0c78f51495574cc2ec9bbb969864829031c')
 options=("!strip" "staticlibs")
 
 build() {
-    cd wut-1.0.0-beta8
+    cd wut-$_gittag
 
-    mkdir -p build && cd build
-    cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$pkgdir/$_destdir" ..
-    make VERBOSE=1
+    make
 }
 
 package() {
-    cd wut-1.0.0-beta8/build
+    cd wut-$_gittag
 
-    make install
+    make install DESTDIR="$pkgdir"
 }
 
