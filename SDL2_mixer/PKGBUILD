@@ -1,0 +1,50 @@
+# Maintainer:  Dave Murphy <davem@devkitpro.org>
+
+pkgname=wiiu-sdl2_mixer
+pkgver=2.0.4
+pkgrel=1
+pkgdesc="A sample multi-channel audio mixer library."
+arch=('any')
+url="https://libsdl.org/projects/SDL_mixer/"
+license=("zlib")
+options=(!strip libtool staticlibs)
+makedepends=('switch-pkg-config' 'devkitpro-pkgbuild-helpers')
+groups=('wiiu-portlibs' 'wiiu-sdl-libs')
+depends=(
+  'wiiu-sdl2'
+  'ppc-libvorbisidec'
+  'ppc-mpg123'
+)
+source=("${url}release/SDL2_mixer-${pkgver}.tar.gz")
+sha256sums=('b4cf5a382c061cd75081cf246c2aa2f9df8db04bdda8dcdc6b6cca55bede2419')
+groups=('switch-portlibs' 'switch-sdl2')
+
+build() {
+  cd SDL2_mixer-$pkgver
+
+  source ${DEVKITPRO}/wiiuvars.sh
+
+  # patch out compiling playwave and playmus
+  sed 's|\$(objects)/play.*mus\$(EXE)||' -i Makefile.in
+
+  LIBS="-lm" ./configure --prefix="${PORTLIBS_PREFIX}" \
+    --host=powerpc-eabi --disable-shared --enable-static \
+    --disable-music-cmd \
+    --enable-music-ogg-tremor
+
+  make
+}
+
+package() {
+  cd SDL2_mixer-$pkgver
+
+  source /opt/devkitpro/wiiuvars.sh
+
+  make DESTDIR="$pkgdir" install
+
+  # add our static libs
+  echo "Requires.private: vorbisidec" >> "${pkgdir}/${PORTLIBS_PREFIX}/lib/pkgconfig/SDL2_mixer.pc"
+
+  # License
+  install -Dm644 "COPYING.txt" "${pkgdir}/${PORTLIBS_PREFIX}/licenses/${pkgname}/COPYING.txt"
+}
