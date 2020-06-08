@@ -1,0 +1,41 @@
+# Maintainer:  Dave Murphy <davem@devkitpro.org>
+
+pkgname=wiiu-sdl2_gfx
+pkgver=1.0.4
+pkgrel=1
+pkgdesc="SDL2 graphics drawing primitives (Nintendo WiiU port)."
+arch=('any')
+url="https://libsdl.org"
+license=("zlib")
+options=(!strip libtool staticlibs)
+makedepends=('wiiu-pkg-config' 'devkitpro-pkgbuild-helpers')
+depends=('wiiu-sdl2')
+source=("http://www.ferzkopp.net/Software/SDL2_gfx/SDL2_gfx-1.0.4.tar.gz")
+sha256sums=(
+ '63e0e01addedc9df2f85b93a248f06e8a04affa014a835c2ea34bfe34e576262'
+)
+groups=('wiiu-portlibs' 'wiiu-sdl2-libs')
+
+build() {
+
+  cd SDL2_gfx-$pkgver
+
+  source /opt/devkitpro/wiiuvars.sh
+  
+  ./configure --prefix="${PORTLIBS_PREFIX}" \
+    --enable-mmx=no \
+    --host=powerpc-eabi \
+    --disable-shared --enable-static \
+    --with-sdl-prefix=${PORTLIBS_PREFIX}
+
+  make
+}
+
+package() {
+  cd SDL2_gfx-$pkgver
+
+  source /opt/devkitpro/wiiuvars.sh
+
+  make DESTDIR="$pkgdir" install
+
+}
