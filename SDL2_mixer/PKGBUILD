@@ -2,10 +2,10 @@
 
 pkgname=wiiu-sdl2_mixer
 pkgver=2.0.4
-pkgrel=3
+pkgrel=4
 pkgdesc="A sample multi-channel audio mixer library."
 arch=('any')
-url="https://libsdl.org/projects/SDL_mixer/"
+commit="786f515337a51f3cb5cdbfdba63ffe8ec9c6ff69"
 license=("zlib")
 options=(!strip libtool staticlibs)
 makedepends=('switch-pkg-config' 'devkitpro-pkgbuild-helpers')
@@ -15,12 +15,12 @@ depends=(
   'ppc-libvorbis'
   'ppc-mpg123'
 )
-source=("${url}release/SDL2_mixer-${pkgver}.tar.gz")
-sha256sums=('b4cf5a382c061cd75081cf246c2aa2f9df8db04bdda8dcdc6b6cca55bede2419')
+source=("https://github.com/SDL-mirror/SDL_mixer/archive/${commit}.tar.gz")
+sha256sums=('52234fa476851ef4b456665a922874630c8591f5695933e689d4fc96aaf527e9')
 groups=('wiiu-portlibs' 'wiiu-sdl2-libs')
 
 build() {
-  cd SDL2_mixer-$pkgver
+  cd SDL_mixer-$commit
 
   source ${DEVKITPRO}/wiiuvars.sh
 
@@ -36,7 +36,7 @@ build() {
 }
 
 package() {
-  cd SDL2_mixer-$pkgver
+  cd SDL_mixer-$commit
 
   source /opt/devkitpro/wiiuvars.sh
 
