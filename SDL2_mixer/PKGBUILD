@@ -2,7 +2,7 @@
 
 pkgname=wiiu-sdl2_mixer
 pkgver=2.0.4
-pkgrel=4
+pkgrel=5
 pkgdesc="A sample multi-channel audio mixer library."
 arch=('any')
 url="https://libsdl.org/projects/SDL_mixer/"
@@ -14,6 +14,7 @@ depends=(
   'wiiu-sdl2'
   'ppc-libvorbis'
   'ppc-mpg123'
+  'ppc-libmodplug'
 )
 
 source=(
@@ -41,7 +42,8 @@ build() {
   LIBS="-lm" ./configure --prefix="${PORTLIBS_PREFIX}" \
     --host=powerpc-eabi --disable-shared --enable-static \
     --disable-music-cmd \
-    --disable-music-ogg-shared
+    --disable-music-ogg-shared \
+    --enable-music-mod-modplug
 
   make
 }
@@ -54,7 +56,7 @@ package() {
   make DESTDIR="$pkgdir" install
 
   # add our static libs
-  echo "Requires.private: vorbisfile" >> "${pkgdir}/${PORTLIBS_PREFIX}/lib/pkgconfig/SDL2_mixer.pc"
+  echo "Requires.private: libmodplug libmpg123 vorbisfile" >> "${pkgdir}/${PORTLIBS_PREFIX}/lib/pkgconfig/SDL2_mixer.pc"
 
   # License
   install -Dm644 "COPYING.txt" "${pkgdir}/${PORTLIBS_PREFIX}/licenses/${pkgname}/COPYING.txt"
