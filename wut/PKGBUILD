@@ -4,9 +4,9 @@
 _destdir=/opt/devkitpro/wut
 
 pkgname=wut
-pkgver=1.0.0_beta10
-_gittag=1.0.0-beta10
-pkgrel=3
+pkgver=1.0.0_beta11
+_gittag=1.0.0-beta11
+pkgrel=1
 pkgdesc="Open-source Wii U Libraries"
 arch=('any')
 url="https://github.com/devkitPro/wut"
@@ -16,7 +16,7 @@ groups=('wiiu-dev')
 depends=('devkitPPC' 'wut-tools')
 
 source=("wut-${_gittag}.tar.gz::https://github.com/devkitPro/wut/archive/$_gittag.tar.gz")
-sha256sums=('064e27845b6ff44b36798c9fae27677a68c0ca419fef68b71f4f5e54b0256ffa')
+sha256sums=('a2fca870d8599318da56dc93366829eedfe8ffa57b3aaa335275ee3006fcc286')
 options=("!strip" "staticlibs")
 
 build() {
