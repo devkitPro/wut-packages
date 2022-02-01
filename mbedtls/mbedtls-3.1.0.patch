@@ -1,0 +1,85 @@
+diff --git a/library/entropy.c b/library/entropy.c
+index 9e31f84..f349dea 100644
+--- a/library/entropy.c
++++ b/library/entropy.c
+@@ -87,6 +87,29 @@ void mbedtls_entropy_init( mbedtls_entropy_context *ctx )
+ #endif /* MBEDTLS_NO_DEFAULT_ENTROPY_SOURCES */
+ }
+ 
++#ifdef __WIIU__
++
++#include <stdlib.h>
++#include <coreinit/time.h>
++
++int mbedtls_hardware_poll( void *data,
++                           unsigned char *output, size_t len, size_t *olen )
++{
++    size_t i;
++    (void)(data);
++
++    for (i = 0; i < len; i++) {
++        srand(OSGetSystemTick());
++        output[i] = rand() & 0xff;
++    }
++
++    if(olen)
++        *olen = len;
++    return 0;
++}
++
++#endif
++
+ void mbedtls_entropy_free( mbedtls_entropy_context *ctx )
+ {
+     /* If the context was already free, don't call free() again.
+diff --git a/library/net_sockets.c b/library/net_sockets.c
+index 17a9e4a..521f7ed 100644
+--- a/library/net_sockets.c
++++ b/library/net_sockets.c
+@@ -33,7 +33,7 @@
+ 
+ #if !defined(unix) && !defined(__unix__) && !defined(__unix) && \
+     !defined(__APPLE__) && !defined(_WIN32) && !defined(__QNXNTO__) && \
+-    !defined(__HAIKU__) && !defined(__midipix__)
++    !defined(__HAIKU__) && !defined(__midipix__) && !defined(__WIIU__)
+ #error "This module only works on Unix and Windows, see MBEDTLS_NET_C in mbedtls_config.h"
+ #endif
+ 
+@@ -347,7 +347,7 @@ int mbedtls_net_accept( mbedtls_net_context *bind_ctx,
+ 
+ #if defined(__socklen_t_defined) || defined(_SOCKLEN_T) ||  \
+     defined(_SOCKLEN_T_DECLARED) || defined(__DEFINED_socklen_t) || \
+-    defined(socklen_t) || (defined(_POSIX_VERSION) && _POSIX_VERSION >= 200112L)
++    defined(socklen_t) || (defined(_POSIX_VERSION) && _POSIX_VERSION >= 200112L) || defined(__WIIU__)
+     socklen_t n = (socklen_t) sizeof( client_addr );
+     socklen_t type_len = (socklen_t) sizeof( type );
+ #else
+@@ -437,6 +437,7 @@ int mbedtls_net_accept( mbedtls_net_context *bind_ctx,
+ 
+             memcpy( client_ip, &addr4->sin_addr.s_addr, *ip_len );
+         }
++#ifndef __WIIU__
+         else
+         {
+             struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *) &client_addr;
+@@ -447,6 +448,7 @@ int mbedtls_net_accept( mbedtls_net_context *bind_ctx,
+ 
+             memcpy( client_ip, &addr6->sin6_addr.s6_addr, *ip_len);
+         }
++#endif
+     }
+ 
+     return( 0 );
+diff --git a/library/timing.c b/library/timing.c
+index 8a02c00..474239d 100644
+--- a/library/timing.c
++++ b/library/timing.c
+@@ -27,7 +27,7 @@
+ 
+ #if !defined(unix) && !defined(__unix__) && !defined(__unix) && \
+     !defined(__APPLE__) && !defined(_WIN32) && !defined(__QNXNTO__) && \
+-    !defined(__HAIKU__) && !defined(__midipix__)
++    !defined(__HAIKU__) && !defined(__midipix__) && !defined(__WIIU__)
+ #error "This module only works on Unix and Windows, see MBEDTLS_TIMING_C in mbedtls_config.h"
+ #endif
+ 
