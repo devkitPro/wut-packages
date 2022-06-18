@@ -1,4 +1,5 @@
-# Maintainer: Ezekiel Bethel <zek@9net.org>
+# Maintainer: TurtleP <jpostelnek@outlook.com>
+
 pkgname=wiiu-physfs
 pkgver=3.0.2
 pkgrel=1
