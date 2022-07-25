@@ -1,5 +1,5 @@
 pkgname=wiiu-mbedtls
-pkgver=2.28.0
+pkgver=2.28.1
 pkgrel=1
 pkgdesc='An open source, portable, easy to use, readable and flexible SSL library'
 arch=('any')
@@ -15,7 +15,7 @@ source=(
 )
 
 sha256sums=(
-  '6519579b836ed78cc549375c7c18b111df5717e86ca0eeff4cb64b2674f424cc'
+  '6797a7b6483ef589deeab8d33d401ed235d7be25eeecda1be8ddfed406d40ff4'
   '37f89b474a15e6fb22a6952784cf66e9559c2780ba88533adef3aae9dccf3327'
 )
 
@@ -29,10 +29,8 @@ build() {
 
   ./scripts/config.pl unset MBEDTLS_SELF_TEST
 
-  source ${DEVKITPRO}/wiiuvars.sh
-
-  ${PORTLIBS_WIIU}/bin/powerpc-eabi-cmake \
-    -DCMAKE_INSTALL_PREFIX=$PORTLIBS_PREFIX \
+  /opt/devkitpro/portlibs/wiiu/bin/powerpc-eabi-cmake \
+    -DCMAKE_INSTALL_PREFIX=/opt/devkitpro/portlibs/wiiu \
     -DCMAKE_BUILD_TYPE=Release \
     -DENABLE_TESTING=Off -DENABLE_PROGRAMS=Off \
     .
