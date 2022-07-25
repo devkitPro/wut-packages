@@ -1,0 +1,49 @@
+pkgname=wiiu-curl
+pkgver=7.84.0
+pkgrel=1
+pkgdesc='Library for transferring data with URLs'
+arch=('any')
+url='https://curl.se/'
+license=('The curl license')
+options=(!strip libtool staticlibs)
+makedepends=('wiiu-pkg-config' 'dkp-toolchain-vars')
+depends=('wut' 'ppc-zlib' 'wiiu-mbedtls')
+groups=('wiiu-portlibs')
+
+source=("${url}/download/curl-${pkgver}.tar.xz")
+
+sha256sums=('2d118b43f547bfe5bae806d8d47b4e596ea5b25a6c1f080aef49fbcd817c5db8')
+
+build() {
+  cd curl-$pkgver
+
+  source ${DEVKITPRO}/wiiuvars.sh
+
+  ./configure \
+    --prefix=${PORTLIBS_PREFIX} \
+    --host=powerpc-eabi \
+    --disable-shared \
+    --enable-static \
+    --disable-ipv6 \
+    --disable-unix-sockets \
+    --disable-threaded-resolver \
+    --disable-manual \
+    --disable-pthreads \
+    --disable-socketpair \
+    --disable-ntlm-wb \
+    --with-mbedtls=${PORTLIBS_PREFIX}
+
+  make -C lib
+}
+
+package() {
+  cd curl-$pkgver
+
+  source ${DEVKITPRO}/wiiuvars.sh
+
+  make DESTDIR="$pkgdir" -C lib install
+  make DESTDIR="$pkgdir" -C include install
+  make DESTDIR="$pkgdir" install-binSCRIPTS
+
+  install -Dm644 COPYING "$pkgdir"${PORTLIBS_PREFIX}/licenses/$pkgname/COPYING
+}
