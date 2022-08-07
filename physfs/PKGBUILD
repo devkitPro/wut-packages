@@ -21,9 +21,7 @@ build() {
 
   patch -Np1 -i "$srcdir"/physfs-${pkgver}.patch
 
-  source ${DEVKITPRO}/wiiuvars.sh
-
-    powerpc-eabi-cmake -G"Unix Makefiles" \
+  /opt/devkitpro/portlibs/wiiu/bin/powerpc-eabi-cmake -G"Unix Makefiles" \
     -DCMAKE_INSTALL_PREFIX=$PORTLIBS_PREFIX \
     -DPHYSFS_BUILD_STATIC=ON -DPHYSFS_BUILD_SHARED=OFF \
     -DPHYSFS_BUILD_TEST=OFF \
