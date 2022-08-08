@@ -2,7 +2,7 @@
 
 pkgname=wiiu-physfs
 pkgver=3.0.2
-pkgrel=1
+pkgrel=2
 pkgdesc='A library to provide abstract access to various archives.'
 arch=('any')
 url='https://icculus.org/physfs'
@@ -22,7 +22,7 @@ build() {
   patch -Np1 -i "$srcdir"/physfs-${pkgver}.patch
 
   /opt/devkitpro/portlibs/wiiu/bin/powerpc-eabi-cmake -G"Unix Makefiles" \
-    -DCMAKE_INSTALL_PREFIX=$PORTLIBS_PREFIX \
+    -DCMAKE_INSTALL_PREFIX=/opt/devkitpro/portlibs/wiiu \
     -DPHYSFS_BUILD_STATIC=ON -DPHYSFS_BUILD_SHARED=OFF \
     -DPHYSFS_BUILD_TEST=OFF \
     .
