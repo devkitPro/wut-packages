@@ -1,10 +1,9 @@
-# Maintainer: Ash Logan <ash [at] heyquark [dot] com>
 # Maintainer: WinterMute <davem@devkitpro.org>
 
 _destdir=/opt/devkitpro/wut
 
 pkgname=wut
-pkgver=1.1.1
+pkgver=1.2.0
 pkgrel=1
 pkgdesc="Open-source Wii U Libraries"
 arch=('any')
@@ -15,7 +14,7 @@ groups=('wiiu-dev')
 depends=('devkitPPC' 'wut-tools')
 
 source=("wut-${pkgver}.tar.gz::https://github.com/devkitPro/wut/archive/v${pkgver}.tar.gz")
-sha256sums=('a126fabcb95981e101bc1fcc27e8cee6b42188ac2980f6af31588dbe8ffc760f')
+sha256sums=('b26a668acd33b04f9aa1dcc4ddf77cb58995a09db08dadd143ad2926cec85e98')
 options=("!strip" "staticlibs")
 
 build() {
