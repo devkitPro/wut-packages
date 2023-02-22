@@ -12,7 +12,7 @@ groups=('wiiu-portlibs')
 
 source=("${url}/download/curl-${pkgver}.tar.xz")
 
-sha256sums=('2d118b43f547bfe5bae806d8d47b4e596ea5b25a6c1f080aef49fbcd817c5db8')
+sha256sums=('dfb8582a05a893e305783047d791ffef5e167d295cf8d12b9eb9cfa0991ca5a9')
 
 build() {
   cd curl-$pkgver
