@@ -1,5 +1,5 @@
 pkgname=wiiu-curl
-pkgver=7.88.1
+pkgver=8.0.1
 pkgrel=2
 pkgdesc='Library for transferring data with URLs'
 arch=('any')
@@ -12,7 +12,7 @@ groups=('wiiu-portlibs')
 
 source=("${url}/download/curl-${pkgver}.tar.xz")
 
-sha256sums=('1dae31b2a7c1fe269de99c0c31bb488346aab3459b5ffca909d6938249ae415f')
+sha256sums=('5fd29000a4089934f121eff456101f0a5d09e2a3e89da1d714adf06c4be887cb')
 
 build() {
   cd curl-$pkgver
