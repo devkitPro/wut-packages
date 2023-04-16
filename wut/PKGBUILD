@@ -3,7 +3,7 @@
 _destdir=/opt/devkitpro/wut
 
 pkgname=wut
-pkgver=1.2.0
+pkgver=1.3.0
 pkgrel=2
 pkgdesc="Open-source Wii U Libraries"
 arch=('any')
@@ -15,18 +15,15 @@ depends=('devkitPPC' 'wut-tools')
 
 source=(
     "wut-${pkgver}.tar.gz::https://github.com/devkitPro/wut/archive/v${pkgver}.tar.gz"
-    "0001-coreinit-Fix-OSDynLoad_Error-to-be-a-32bit-value.patch"
 )
 sha256sums=(
-    'b26a668acd33b04f9aa1dcc4ddf77cb58995a09db08dadd143ad2926cec85e98'
-    '4ba89e6eb374cd2c492a9a91ce15c73407f260618ae10f6a678dd04cdd3ef533'
+    'db40502ffcd68a2750a716359ed17022445fc8a984224c3050a5aacb033fb2df'
 )
 options=("!strip" "staticlibs")
 
 build() {
     cd wut-${pkgver}
 
-    patch -p1 -i ${srcdir}/0001-coreinit-Fix-OSDynLoad_Error-to-be-a-32bit-value.patch
     make
 }
 
