@@ -1,14 +1,14 @@
 # Maintainer:  Dave Murphy <davem@devkitpro.org>
 
 pkgname=wiiu-sdl2_image
-pkgver=2.0.4
-pkgrel=1
-pkgdesc="SDL2 image loading library (Nintendo WiiU port)."
+pkgver=2.6.2
+pkgrel=2
+pkgdesc="SDL2 image loading library"
 arch=('any')
 url="https://libsdl.org/projects/SDL_image/"
 license=("zlib")
 options=(!strip libtool staticlibs)
-makedepends=('wiiu-pkg-config' 'devkitpro-pkgbuild-helpers')
+makedepends=('wiiu-pkg-config' 'dkp-toolchain-vars')
 depends=(
   'wiiu-sdl2'
   'ppc-libpng'
@@ -16,7 +16,7 @@ depends=(
 )
 source=("${url}release/SDL2_image-${pkgver}.tar.gz")
 sha256sums=(
-  'e74ec49c2402eb242fbfa16f2f43a19582a74c2eabfbfb873f00d4250038ceac'
+  '48355fb4d8d00bac639cd1c4f4a7661c4afef2c212af60b340e06b7059814777'
 )
 groups=('wiiu-portlibs' 'wiiu-sdl2-libs')
 
@@ -46,5 +46,5 @@ package() {
   echo "Requires.private: libpng libjpeg" >> "${pkgdir}/${PORTLIBS_PREFIX}/lib/pkgconfig/SDL2_image.pc"
 
   # License
-  install -Dm644 "COPYING.txt" "${pkgdir}/${PORTLIBS_PREFIX}/licenses/${pkgname}/COPYING.txt"
+  install -Dm644 "LICENSE.txt" "${pkgdir}/${PORTLIBS_PREFIX}/licenses/${pkgname}/LICENSE.txt"
 }
