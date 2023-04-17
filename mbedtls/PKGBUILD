@@ -1,5 +1,6 @@
-pkgname=wiiu-mbedtls
-pkgver=2.28.1
+_realname=mbedtls
+pkgname=wiiu-${_realname}
+pkgver=2.28.3
 pkgrel=1
 pkgdesc='An open source, portable, easy to use, readable and flexible SSL library'
 arch=('any')
@@ -10,17 +11,17 @@ makedepends=('wiiu-cmake' 'wiiu-pkg-config' 'dkp-toolchain-vars')
 groups=('wiiu-portlibs')
 
 source=( 
-  "https://github.com/ARMmbed/mbedtls/archive/refs/tags/v${pkgver}.tar.gz"
+  "${_realname}-${pkgver}.tar.gz::https://github.com/ARMmbed/mbedtls/archive/refs/tags/v${pkgver}.tar.gz"
   "mbedtls-${pkgver}.patch"
 )
 
 sha256sums=(
-  '6797a7b6483ef589deeab8d33d401ed235d7be25eeecda1be8ddfed406d40ff4'
-  '37f89b474a15e6fb22a6952784cf66e9559c2780ba88533adef3aae9dccf3327'
+  'bdf7c5bbdc338da3edad89b2885d4f8668f9a6fffeba6ec17a60333e36dade6f'
+  '3dbbf088185b5cb142732538108db56fb19783a7e30199db41e67bba095c6aec'
 )
 
 build() {
-  cd mbedtls-$pkgver
+  cd ${_realname}-${pkgver}
 
   patch -Np1 -i $srcdir/mbedtls-${pkgver}.patch
 
@@ -39,7 +40,7 @@ build() {
 }
 
 package() {
-  cd mbedtls-$pkgver
+  cd ${_realname}-${pkgver}
 
   source ${DEVKITPRO}/wiiuvars.sh
 
