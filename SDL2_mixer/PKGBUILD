@@ -2,7 +2,7 @@
 
 pkgname=wiiu-sdl2_mixer
 pkgver=2.6.3
-pkgrel=2
+pkgrel=3
 pkgdesc="A sample multi-channel audio mixer library."
 arch=('any')
 url="https://libsdl.org/projects/SDL_mixer/"
@@ -42,7 +42,9 @@ build() {
     --host=powerpc-eabi --disable-shared --enable-static \
     --disable-music-cmd \
     --disable-music-ogg-shared \
-    --enable-music-mod-modplug
+    --enable-music-mod-modplug \
+    --disable-music-mp3-drmp3 --enable-music-mp3-mpg123 \
+    --disable-music-flac-drflac --enable-music-flac-libflac
 
   make
 }
