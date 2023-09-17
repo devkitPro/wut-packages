@@ -497,10 +497,10 @@ index 002ae2a33..3e2d583e7 100644
  
 diff --git a/src/audio/wiiu/SDL_wiiuaudio.c b/src/audio/wiiu/SDL_wiiuaudio.c
 new file mode 100644
-index 000000000..763653531
+index 000000000..e6f128915
 --- /dev/null
 +++ b/src/audio/wiiu/SDL_wiiuaudio.c
-@@ -0,0 +1,390 @@
+@@ -0,0 +1,425 @@
 +/*
 +  Simple DirectMedia Layer
 +  Copyright (C) 2018-2018 Ash Logan <ash@heyquark.com>
@@ -526,6 +526,7 @@ index 000000000..763653531
 +#if SDL_AUDIO_DRIVER_WIIU
 +
 +#include <stdio.h>
++#include <malloc.h>
 +
 +#include "SDL_audio.h"
 +#include "SDL_error.h"
@@ -543,6 +544,7 @@ index 000000000..763653531
 +#include <coreinit/cache.h>
 +#include <coreinit/thread.h>
 +#include <coreinit/time.h>
++#include <coreinit/memorymap.h>
 +
 +#define WIIUAUDIO_DRIVER_NAME "wiiu"
 +
@@ -563,15 +565,22 @@ index 000000000..763653531
 +#define next_id(id) (id + 1) % NUM_BUFFERS
 +
 +static int WIIUAUDIO_OpenDevice(_THIS, const char* devname) {
++    int ret = 0;
 +    AXVoiceOffsets offs;
 +    AXVoiceVeData vol = {
 +        .volume = 0x8000,
 +    };
 +    uint32_t old_affinity;
 +    float srcratio;
++    Uint8* mixbuf = NULL;
++    uint32_t mixbuf_allocation_count = 0;
++    Uint8* mixbuf_allocations[32];
 +
 +    this->hidden = (struct SDL_PrivateAudioData*)SDL_malloc(sizeof(*this->hidden));
-+    if (this->hidden == NULL) return SDL_OutOfMemory();
++    if (this->hidden == NULL) {
++        return SDL_OutOfMemory();
++    }
++
 +    SDL_zerop(this->hidden);
 +
 +/*  We *must not* change cores when setting stuff up */
@@ -614,17 +623,42 @@ index 000000000..763653531
 +/*  We changed channels and samples, so recalculate the spec */
 +    SDL_CalculateAudioSpec(&this->spec);
 +
-+/*  Allocate buffers for double-buffering and samples */
-+    for (int i = 0; i < NUM_BUFFERS; i++) {
-+        this->hidden->mixbufs[i] = SDL_malloc(this->spec.size);
-+        if (this->hidden->mixbufs[i] == NULL) {
-+            AXQuit();
-+            printf("DEBUG: Couldn't allocate buffer");
-+            return SDL_SetError("Couldn't allocate buffer");
++/*  Allocate buffers for double-buffering and samples.
++    Make sure the entire mixbuf is in a 512MiB block for the DSP to be accessible. */
++    for (int i = 0; i < 32; i++) {
++        Uint32 physStart, physEnd;
++        mixbuf = memalign(0x40, this->spec.size * NUM_BUFFERS);
++        if (!mixbuf) {
++            break;
 +        }
 +
-+        memset(this->hidden->mixbufs[i], 0, this->spec.size);
-+        DCStoreRange(this->hidden->mixbufs[i], this->spec.size);
++        physStart = OSEffectiveToPhysical((uint32_t) mixbuf) & 0x1fffffff;
++        physEnd = physStart + this->spec.size * NUM_BUFFERS;
++        if ((physEnd & 0xe0000000) == 0) {
++            break;
++        }
++
++        mixbuf_allocations[mixbuf_allocation_count] = mixbuf;
++        mixbuf_allocation_count++;
++        mixbuf = NULL;
++    }
++
++/*  Free the failed attempts */
++    while (mixbuf_allocation_count--) {
++        free(mixbuf_allocations[mixbuf_allocation_count]);
++    }
++
++    if (!mixbuf) {
++        printf("Couldn't allocate mix buffer\n");
++        ret = SDL_OutOfMemory();
++        goto end;
++    }
++
++    memset(mixbuf, 0, this->spec.size * NUM_BUFFERS);
++    DCStoreRange(mixbuf, this->spec.size * NUM_BUFFERS);
++
++    for (int i = 0; i < NUM_BUFFERS; i++) {
++        this->hidden->mixbufs[i] = mixbuf + this->spec.size * i;
 +    }
 +
 +/*  Allocate a scratch buffer for deinterleaving operations */
@@ -632,7 +666,8 @@ index 000000000..763653531
 +    if (this->hidden->deintvbuf == NULL) {
 +        AXQuit();
 +        printf("DEBUG: Couldn't allocate deinterleave buffer");
-+        return SDL_SetError("Couldn't allocate deinterleave buffer");
++        ret = SDL_SetError("Couldn't allocate deinterleave buffer");
++        goto end;
 +    }
 +
 +
@@ -642,7 +677,8 @@ index 000000000..763653531
 +        if (!this->hidden->voice[i]) {
 +            AXQuit();
 +            printf("DEBUG: couldn't get voice\n");
-+            return SDL_OutOfMemory();
++            ret = SDL_OutOfMemory();
++            goto end;
 +        }
 +
 +    /*  Start messing with it */
@@ -714,9 +750,10 @@ index 000000000..763653531
 +    cb_this = this; //wish there was a better way
 +    AXRegisterAppFrameCallback(_WIIUAUDIO_framecallback);
 +
++end: ;
 +/*  Put the thread affinity back to normal - we won't call any more AX funcs */
 +    OSSetThreadAffinity(OSGetCurrentThread(), old_affinity);
-+    return 0;
++    return ret;
 +}
 +
 +/*  Called every 3ms before a frame of audio is rendered. Keep it fast! */
@@ -858,9 +895,7 @@ index 000000000..763653531
 +        }
 +        AXQuit();
 +    }
-+    for (int i = 0; i < NUM_BUFFERS; i++) {
-+        if (this->hidden->mixbufs[i]) SDL_free(this->hidden->mixbufs[i]);
-+    }
++    if (this->hidden->mixbufs[0]) free(this->hidden->mixbufs[0]);
 +    if (this->hidden->deintvbuf) SDL_free(this->hidden->deintvbuf);
 +    SDL_free(this->hidden);
 +}
@@ -5244,10 +5279,10 @@ index 000000000..373913ada
 +#endif /* SDL_wiiu_gfx_heap_h */
 diff --git a/src/video/wiiu/SDL_wiiuvideo.c b/src/video/wiiu/SDL_wiiuvideo.c
 new file mode 100644
-index 000000000..dd89c4e29
+index 000000000..f42f206aa
 --- /dev/null
 +++ b/src/video/wiiu/SDL_wiiuvideo.c
-@@ -0,0 +1,382 @@
+@@ -0,0 +1,387 @@
 +/*
 +  Simple DirectMedia Layer
 +  Copyright (C) 2018-2018 Ash Logan <ash@heyquark.com>
@@ -5410,6 +5445,11 @@ index 000000000..dd89c4e29
 +
 +	WIIU_GfxHeap_MEM1Destroy();
 +	WIIU_GfxHeap_ForegroundDestroy();
++
++	// This is necessary to avoid a black frame on leaving foreground
++	GX2SetTVEnable(TRUE);
++	GX2SetDRCEnable(TRUE);
++
 +	videodata->hasForeground = SDL_FALSE;
 +
 +	return 0;
