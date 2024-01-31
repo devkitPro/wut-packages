@@ -1,8 +1,8 @@
 # Maintainer:  Dave Murphy <davem@devkitpro.org>
 
 pkgname=wiiu-sdl2
-pkgver=2.26.5
-pkgrel=3
+pkgver=2.28.5
+pkgrel=1
 pkgdesc="A library for portable low-level access to a video framebuffer, audio output, mouse, and keyboard"
 arch=('any')
 url="https://libsdl.org"
@@ -30,5 +30,5 @@ package() {
   make install DESTDIR=$pkgdir
 
 }
-sha256sums=('ad8fea3da1be64c83c45b1d363a6b4ba8fd60f5bde3b23ec73855709ec5eabf7'
-            '8106e8017b31bb691c438c8dad6691a79d5538557a332280edb9547a87f10dc2')
+sha256sums=('332cb37d0be20cb9541739c61f79bae5a477427d79ae85e352089afdaf6666e4'
+            '827bf2c0383cce2660a9ca91c0b97f3956912a4bc4a36cc3764dac5eb923dc22')
