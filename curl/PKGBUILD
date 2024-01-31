@@ -1,6 +1,6 @@
 pkgname=wiiu-curl
-pkgver=8.0.1
-pkgrel=2
+pkgver=8.4.0
+pkgrel=1
 pkgdesc='Library for transferring data with URLs'
 arch=('any')
 url='https://curl.se/'
@@ -49,3 +49,4 @@ package() {
 
   install -Dm644 COPYING "$pkgdir"${PORTLIBS_PREFIX}/licenses/$pkgname/COPYING
 }
+sha256sums=('16c62a9c4af0f703d28bda6d7bbf37ba47055ad3414d70dec63e2e6336f2a82d')
