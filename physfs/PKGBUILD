@@ -2,7 +2,7 @@
 
 pkgname=wiiu-physfs
 pkgver=3.0.2
-pkgrel=2
+pkgrel=3
 pkgdesc='A library to provide abstract access to various archives.'
 arch=('any')
 url='https://icculus.org/physfs'
