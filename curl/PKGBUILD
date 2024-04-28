@@ -1,6 +1,6 @@
 pkgname=wiiu-curl
 pkgver=8.4.0
-pkgrel=1
+pkgrel=2
 pkgdesc='Library for transferring data with URLs'
 arch=('any')
 url='https://curl.se/'
@@ -33,7 +33,8 @@ build() {
     --disable-pthreads \
     --disable-socketpair \
     --disable-ntlm-wb \
-    --with-mbedtls=${PORTLIBS_PREFIX}
+    --with-mbedtls=${PORTLIBS_PREFIX} \
+    --with-ca-path=/vol/storage_mlc01/sys/title/0005001b/10054000/content/scerts
 
   make -C lib
 }
