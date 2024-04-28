@@ -1,6 +1,6 @@
 pkgname=wiiu-curl
-pkgver=8.4.0
-pkgrel=2
+pkgver=8.7.1
+pkgrel=1
 pkgdesc='Library for transferring data with URLs'
 arch=('any')
 url='https://curl.se/'
@@ -11,10 +11,6 @@ depends=('wut' 'ppc-zlib' 'wiiu-mbedtls')
 groups=('wiiu-portlibs')
 
 source=("${url}/download/curl-${pkgver}.tar.xz")
-
-sha256sums=(
-  '0a381cd82f4d00a9a334438b8ca239afea5bfefcfa9a1025f2bf118e79e0b5f0'
-)
 
 build() {
   cd curl-$pkgver
@@ -50,4 +46,5 @@ package() {
 
   install -Dm644 COPYING "$pkgdir"${PORTLIBS_PREFIX}/licenses/$pkgname/COPYING
 }
-sha256sums=('16c62a9c4af0f703d28bda6d7bbf37ba47055ad3414d70dec63e2e6336f2a82d')
+
+sha256sums=('6fea2aac6a4610fbd0400afb0bcddbe7258a64c63f1f68e5855ebc0c659710cd')
