@@ -2,7 +2,7 @@
 
 pkgname=wiiu-sdl2
 pkgver=2.28.5
-pkgrel=1
+pkgrel=2
 pkgdesc="A library for portable low-level access to a video framebuffer, audio output, mouse, and keyboard"
 arch=('any')
 url="https://libsdl.org"
@@ -31,4 +31,4 @@ package() {
 
 }
 sha256sums=('332cb37d0be20cb9541739c61f79bae5a477427d79ae85e352089afdaf6666e4'
-            '827bf2c0383cce2660a9ca91c0b97f3956912a4bc4a36cc3764dac5eb923dc22')
+            'bdd7f127de2a4f4d0e543002215ddb22949a5346e076a55cd9b126e20a3bb287')
