@@ -3,7 +3,7 @@
 _destdir=/opt/devkitpro/wut
 
 pkgname=wut
-pkgver=1.7.0
+pkgver=1.8.0
 pkgrel=1
 pkgdesc="Open-source Wii U Libraries"
 arch=('any')
@@ -31,4 +31,4 @@ package() {
     make install DESTDIR="$pkgdir"
 }
 
-sha256sums=('71095a0767d45e6d27cab96f3029db9c6831a7bc9698ae4bca1089d0daa8ba5a')
+sha256sums=('802f26b057c3c6d1f2e7938940695b668d4f0df94f818ca08a046b0291671e43')
