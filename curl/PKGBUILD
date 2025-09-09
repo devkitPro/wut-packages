@@ -1,6 +1,6 @@
 pkgname=wiiu-curl
 pkgver=8.7.1
-pkgrel=1
+pkgrel=3
 pkgdesc='Library for transferring data with URLs'
 arch=('any')
 url='https://curl.se/'
