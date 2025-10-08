@@ -1,0 +1,108 @@
+diff -Naur -x '*.spec' -x '*.m4' -x autom4te.cache -x configure -x '*.in' SDL2_net-2.2.0-ori/configure.ac SDL2_net-2.2.0-wiiu/configure.ac
+--- SDL2_net-2.2.0-ori/configure.ac	2022-08-19 14:00:04.000000000 -0300
++++ SDL2_net-2.2.0-wiiu/configure.ac	2025-10-05 22:21:39.360176069 -0300
+@@ -196,8 +196,6 @@
+             :,
+ 	    AC_MSG_ERROR([*** SDL version $SDL_VERSION not found!])
+ )
+-CFLAGS="$CFLAGS $SDL_CFLAGS"
+-LIBS="$LIBS $SDL_LIBS"
+ 
+ dnl Calculate the location of the prefix, relative to the cmake folder
+ pkg_cmakedir='$libdir/cmake/SDL2_net'
+diff -Naur -x '*.spec' -x '*.m4' -x autom4te.cache -x configure -x '*.in' SDL2_net-2.2.0-ori/Makefile.am SDL2_net-2.2.0-wiiu/Makefile.am
+--- SDL2_net-2.2.0-ori/Makefile.am	2022-08-17 14:28:51.000000000 -0300
++++ SDL2_net-2.2.0-wiiu/Makefile.am	2025-10-05 22:26:24.602705797 -0300
+@@ -2,6 +2,9 @@
+ ACLOCAL_AMFLAGS = -I acinclude
+ AUTOMAKE_OPTIONS= foreign
+ 
++AM_CPPFLAGS = $(SDL_CFLAGS)
++AM_LDFLAGS = $(SDL_LIBS)
++
+ lib_LTLIBRARIES = libSDL2_net.la
+ 
+ libSDL2_netincludedir = $(includedir)/SDL2
+diff -Naur -x '*.spec' -x '*.m4' -x autom4te.cache -x configure -x '*.in' SDL2_net-2.2.0-ori/SDLnet.c SDL2_net-2.2.0-wiiu/SDLnet.c
+--- SDL2_net-2.2.0-ori/SDLnet.c	2022-08-17 13:55:22.000000000 -0300
++++ SDL2_net-2.2.0-wiiu/SDLnet.c	2025-10-05 21:07:55.665798511 -0300
+@@ -28,6 +28,10 @@
+ #include <stdarg.h>
+ #endif
+ 
++#ifdef __WIIU__
++#include <nn/ac.h>
++#endif
++
+ #if defined(SDL_BUILD_MAJOR_VERSION) && defined(SDL_COMPILE_TIME_ASSERT)
+ SDL_COMPILE_TIME_ASSERT(SDL_BUILD_MAJOR_VERSION,
+                         SDL_NET_MAJOR_VERSION == SDL_BUILD_MAJOR_VERSION);
+@@ -129,6 +133,9 @@
+             SDLNet_SetError("Couldn't initialize IBM OS/2 sockets");
+             return(-1);
+         }
++#elif defined(__WIIU__)
++        ACInitialize();
++        ACConnectAsync();
+ #else
+         /* SIGPIPE is generated when a remote socket is closed */
+         void (*handler)(int);
+@@ -157,6 +164,8 @@
+         }
+ #elif defined(__OS2__) && !defined(__EMX__)
+         /* -- nothing */
++#elif defined(__WIIU__)
++        ACFinalize();
+ #else
+         /* Restore the SIGPIPE handler */
+         void (*handler)(int);
+@@ -289,6 +298,17 @@
+         }
+     }
+     SDL_free(pAdapterInfo);
++#elif defined(__WIIU__)
++    NNResult result;
++    uint32_t ip;
++    result = ACGetAssignedAddress(&ip);
++    if (NNResult_IsSuccess(result)) {
++        if (count < maxcount) {
++            addresses[count].host = ip;
++            addresses[count].port = 0;
++            ++count;
++        }
++    }
+ #endif
+     return count;
+ }
+diff -Naur -x '*.spec' -x '*.m4' -x autom4te.cache -x configure -x '*.in' SDL2_net-2.2.0-ori/SDLnetsys.h SDL2_net-2.2.0-wiiu/SDLnetsys.h
+--- SDL2_net-2.2.0-ori/SDLnetsys.h	2022-08-17 13:55:22.000000000 -0300
++++ SDL2_net-2.2.0-wiiu/SDLnetsys.h	2025-10-05 21:35:56.480821921 -0300
+@@ -40,6 +40,18 @@
+ #include <winsock2.h>
+ #include <ws2tcpip.h>
+ #include <iphlpapi.h>
++#elif defined(__WIIU__)
++/* Note: we don't have <net/if.h> so we can't use the generic includes. */
++#include <arpa/inet.h>
++#include <fcntl.h>
++#include <netdb.h>
++#include <netinet/in.h>
++#include <netinet/tcp.h>
++#include <sys/ioctl.h>
++#include <sys/select.h>
++#include <sys/socket.h>
++#include <sys/time.h>
++#include <unistd.h>
+ #else /* UNIX */
+ #ifdef __OS2__
+ #include <sys/param.h>
+@@ -76,6 +88,9 @@
+ #else  /* !__OS2__ */
+ #define closesocket close
+ #endif /* __OS2__ */
++#ifdef __WIIU__
++#define closesocket close
++#endif
+ #define SOCKET  int
+ #define INVALID_SOCKET  -1
+ #define SOCKET_ERROR    -1
