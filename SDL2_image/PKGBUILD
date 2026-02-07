@@ -4,25 +4,31 @@ _pkgname=SDL2_image
 pkgname=wiiu-sdl2_image
 pkgver=2.6.3
 pkgrel=1
+provides=("wiiu-${_pkgname}=${pkgver}")
 pkgdesc="SDL2 image loading library"
 arch=('any')
 url="https://libsdl.org/projects/SDL_image/"
 license=("zlib")
 options=(!buildflags !strip libtool staticlibs)
-makedepends=('wiiu-pkg-config' 'dkp-toolchain-vars')
+makedepends=(
+  'dkp-toolchain-vars'
+  'wiiu-pkg-config'
+)
 depends=(
   'ppc-libjpeg-turbo'
   'ppc-libpng'
   'ppc-libwebp'
   'wiiu-sdl2'
 )
-source=("${url}release/${_pkgname}-${pkgver}.tar.gz"
-        "wiiu-${_pkgname}-${pkgver}.patch")
+source=(
+  "${url}release/${_pkgname}-${pkgver}.tar.gz"
+  "wiiu-${_pkgname}-${pkgver}.patch"
+)
 
 groups=('wiiu-portlibs' 'wiiu-sdl2-libs')
 
 prepare() {
-  cd ${_pkgname}-$pkgver
+  cd "${_pkgname}-${pkgver}"
 
   patch -N -p1 -i ${srcdir}/wiiu-${_pkgname}-${pkgver}.patch
 
@@ -30,9 +36,9 @@ prepare() {
 }
 
 build() {
-  cd ${_pkgname}-$pkgver
+  cd "${_pkgname}-${pkgver}"
 
-  source ${DEVKITPRO}/wiiuvars.sh
+  source "${DEVKITPRO}/wiiuvars.sh"
 
   ./configure \
       --prefix="${PORTLIBS_PREFIX}" \
@@ -40,20 +46,24 @@ build() {
       --disable-shared \
       --enable-static \
       --disable-sdltest \
-      --disable-stb-image \
-      --disable-tif
+      --disable-jpg-shared \
+      --disable-jxl \
+      --disable-png-shared \
+      --disable-tif \
+      --disable-webp-shared \
+      --disable-sdltest
 
   make
 }
 
 package() {
-  cd ${_pkgname}-$pkgver
+  cd "${_pkgname}-${pkgver}"
 
-  source ${DEVKITPRO}/wiiuvars.sh
+  source "${DEVKITPRO}/wiiuvars.sh"
 
-  make DESTDIR="$pkgdir" install
+  make install DESTDIR="$pkgdir"
 
-  install -Dm644 "LICENSE.txt" -t "${pkgdir}/${PORTLIBS_PREFIX}/licenses/${pkgname}"
+  install -Dm 644 -t "${pkgdir}${PORTLIBS_PREFIX}/licenses/${pkgname}" LICENSE.txt
 }
 
 sha256sums=('931c9be5bf1d7c8fae9b7dc157828b7eee874e23c7f24b44ba7eff6b4836312c'
