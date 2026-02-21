@@ -1,13 +1,13 @@
 pkgname=wiiu-curl
 pkgver=8.7.1
-pkgrel=3
+pkgrel=4
 pkgdesc='Library for transferring data with URLs'
 arch=('any')
 url='https://curl.se/'
 license=('The curl license')
 options=(!strip libtool staticlibs)
 makedepends=('wiiu-pkg-config' 'dkp-toolchain-vars')
-depends=('wut' 'ppc-zlib' 'wiiu-mbedtls')
+depends=('wut' 'ppc-zlib' 'ppc-brotli' 'wiiu-mbedtls')
 groups=('wiiu-portlibs')
 
 source=("${url}/download/curl-${pkgver}.tar.xz")
