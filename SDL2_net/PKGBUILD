@@ -1,0 +1,51 @@
+pkgname=wiiu-sdl2_net
+pkgver=2.2.0
+pkgrel=1
+pkgdesc="SDL2 portable network library."
+arch=('any')
+url="https://github.com/libsdl-org/SDL_net"
+license=("zlib")
+options=(!strip libtool staticlibs)
+makedepends=('wiiu-pkg-config' 'dkp-toolchain-vars')
+depends=(
+  'wiiu-sdl2'
+)
+source=(
+  "${url}/releases/download/release-${pkgver}/SDL2_net-${pkgver}.tar.gz"
+  "SDL2_net-2.2.0.patch"
+)
+groups=('wiiu-portlibs' 'wiiu-sdl2-libs')
+
+build() {
+  cd SDL2_net-$pkgver
+
+  patch -Np1 -i $srcdir/SDL2_net-2.2.0.patch
+  autoreconf
+
+  source ${DEVKITPRO}/wiiuvars.sh
+
+  ./configure \
+    --prefix="${PORTLIBS_PREFIX}" \
+    --host=powerpc-eabi \
+    --disable-shared \
+    --enable-static \
+    --disable-examples \
+    --disable-sdltest \
+    --with-sdl-prefix=${PORTLIBS_PREFIX}
+
+  make
+}
+
+package() {
+  cd SDL2_net-$pkgver
+
+  source /opt/devkitpro/wiiuvars.sh
+
+  make DESTDIR="$pkgdir" install
+
+  # License
+  install -Dm644 "LICENSE.txt" "${pkgdir}/${PORTLIBS_PREFIX}/licenses/${pkgname}/LICENSE.txt"
+}
+
+sha256sums=('4e4a891988316271974ff4e9585ed1ef729a123d22c08bd473129179dc857feb'
+            '496307a89475618d7e58a3375381426549b16eeb4a90c91903c92fc8ccb98e3f')
