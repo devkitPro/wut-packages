@@ -1,23 +1,48 @@
+diff --git a/.clang-format b/.clang-format
+index e98e5cd70a..3105e5c0f7 100644
+--- a/.clang-format
++++ b/.clang-format
+@@ -34,6 +34,7 @@ BraceWrapping:
+   AfterStruct: true
+   AfterUnion: true
+   AfterExternBlock: false
++  BeforeCatch: true
+   BeforeElse: false
+   BeforeWhile: false
+   IndentBraces: false
+@@ -62,6 +63,8 @@ IndentGotoLabels: true
+ IndentPPDirectives: None
+ IndentExternBlock: NoIndent
+ 
++NamespaceIndentation: All
++
+ PointerAlignment: Right
+ SpaceAfterCStyleCast: false
+ SpacesInCStyleCastParentheses: false
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index b38a8bbc1..013dab9ee 100644
+index 93ba359946..c62742e9c3 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -237,8 +237,13 @@ if(USE_GCC OR USE_CLANG OR USE_INTELCC OR USE_QCC)
+@@ -240,8 +240,17 @@ if(USE_GCC OR USE_CLANG OR USE_INTELCC OR USE_QCC)
    set(OPT_DEF_GCC_ATOMICS ON)
  endif()
  
 +if(WIIU)
 +  # Prefer coreinit atomics on Wii U due to a hardware bug in load-exclusive and store-exclusive instructions
 +  set(OPT_DEF_GCC_ATOMICS OFF)
++  # Needed for nn::swkbd API
++  enable_language(CXX)
++  set(LINKER_LANGUAGE CXX)
++  set (CMAKE_CXX_STANDARD 23)
 +endif()
 +
  # Default option knobs
--if(UNIX OR MINGW OR MSYS OR (USE_CLANG AND NOT WINDOWS) OR VITA OR PSP OR PS2 OR N3DS)
-+if(UNIX OR MINGW OR MSYS OR (USE_CLANG AND NOT WINDOWS) OR VITA OR PSP OR PS2 OR N3DS OR WIIU)
+-if(UNIX OR MINGW OR MSYS OR (USE_CLANG AND NOT WINDOWS) OR VITA OR PSP OR PS2 OR N3DS OR SDL_CPU_ARM64EC)
++if(UNIX OR MINGW OR MSYS OR (USE_CLANG AND NOT WINDOWS) OR VITA OR PSP OR PS2 OR N3DS OR SDL_CPU_ARM64EC OR WIIU)
    set(OPT_DEF_LIBC ON)
  endif()
- 
-@@ -350,7 +355,7 @@ if(EMSCRIPTEN)
+ if(WINDOWS OR MACOS OR IOS OR TVOS OR VISIONOS OR WATCHOS)
+@@ -358,7 +367,7 @@ if(EMSCRIPTEN)
    set(SDL_CPUINFO_ENABLED_BY_DEFAULT OFF)
  endif()
  
@@ -26,7 +51,7 @@ index b38a8bbc1..013dab9ee 100644
    set(SDL_SHARED_ENABLED_BY_DEFAULT OFF)
    set(SDL_LOADSO_ENABLED_BY_DEFAULT OFF)
  endif()
-@@ -840,7 +845,7 @@ if(SDL_ASSEMBLY)
+@@ -895,7 +904,7 @@ if(SDL_ASSEMBLY)
  
      check_include_file("immintrin.h" HAVE_IMMINTRIN_H)
  
@@ -35,7 +60,7 @@ index b38a8bbc1..013dab9ee 100644
        set(CMAKE_REQUIRED_FLAGS "-maltivec")
        check_c_source_compiles("
            #include <altivec.h>
-@@ -2883,6 +2888,46 @@ elseif(N3DS)
+@@ -2950,6 +2959,46 @@ elseif(N3DS)
      endif()
      list(APPEND EXTRA_LIBS ${lib})
    endforeach()
@@ -71,19 +96,58 @@ index b38a8bbc1..013dab9ee 100644
 +  if(SDL_VIDEO)
 +    set(SDL_VIDEO_DRIVER_WIIU 1)
 +    set(SDL_VIDEO_RENDER_WIIU 1)
-+    file(GLOB WIIU_VIDEO_SOURCES ${SDL2_SOURCE_DIR}/src/video/wiiu/*.c)
++    file(GLOB WIIU_VIDEO_SOURCES
++        ${SDL2_SOURCE_DIR}/src/video/wiiu/*.c
++        ${SDL2_SOURCE_DIR}/src/video/wiiu/*.cpp)
 +    set(SOURCE_FILES ${SOURCE_FILES} ${WIIU_VIDEO_SOURCES})
 +    set(HAVE_SDL_VIDEO TRUE)
 +  endif()
-+
-+  list(APPEND EXTRA_LIBS
-+      wut
-+    )
++  list(APPEND EXTRA_CXXFLAGS "-fno-exceptions")
++  list(APPEND EXTRA_LIBS wut)
  endif()
  
  if(HAVE_VULKAN AND NOT SDL_LOADSO)
+@@ -3085,8 +3134,13 @@ endif()
+ if(EXTRA_CFLAGS)
+   list(REMOVE_DUPLICATES EXTRA_CFLAGS)
+ endif()
++if(EXTRA_CXXFLAGS)
++  list(REMOVE_DUPLICATES EXTRA_CXXFLAGS)
++endif()
+ listtostr(EXTRA_CFLAGS _EXTRA_CFLAGS)
+ set(EXTRA_CFLAGS ${_EXTRA_CFLAGS})
++listtostr(EXTRA_CXXFLAGS _EXTRA_CXXFLAGS)
++set(EXTRA_CXXFLAGS ${_EXTRA_CXXFLAGS})
+ 
+ if(USE_GCC OR USE_CLANG)
+   string(REGEX REPLACE "(^| )-I" "\\1 -isystem" EXTRA_CFLAGS "${EXTRA_CFLAGS}")
+@@ -3339,10 +3393,11 @@ if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
+   message(STATUS " CMAKE_CXX_FLAGS_DEBUG: ${CMAKE_CXX_FLAGS_DEBUG}")
+ endif()
+ message(STATUS "")
+-message(STATUS " CFLAGS:        ${CMAKE_C_FLAGS}")
+-message(STATUS " EXTRA_CFLAGS:  ${EXTRA_CFLAGS}")
+-message(STATUS " EXTRA_LDFLAGS: ${EXTRA_LDFLAGS} ${EXTRA_LDFLAGS_BUILD}")
+-message(STATUS " EXTRA_LIBS:    ${EXTRA_LIBS}")
++message(STATUS " CFLAGS:         ${CMAKE_C_FLAGS}")
++message(STATUS " EXTRA_CFLAGS:   ${EXTRA_CFLAGS}")
++message(STATUS " EXTRA_CXXFLAGS: ${EXTRA_CXXFLAGS}")
++message(STATUS " EXTRA_LDFLAGS:  ${EXTRA_LDFLAGS} ${EXTRA_LDFLAGS_BUILD}")
++message(STATUS " EXTRA_LIBS:     ${EXTRA_LIBS}")
+ message(STATUS "")
+ message(STATUS " Build Shared Library: ${SDL_SHARED}")
+ message(STATUS " Build Static Library: ${SDL_STATIC}")
+@@ -3377,6 +3432,8 @@ endif()
+ 
+ # Ensure that the extra cflags are used at compile time
+ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${EXTRA_CFLAGS} ${EXTRA_CFLAGS_BUILD}")
++# Same for cxxflags
++set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${EXTRA_CXXFLAGS} ${EXTRA_CXXFLAGS_BUILD}")
+ 
+ if(NOT WINDOWS_STORE AND NOT SDL2_DISABLE_SDL2MAIN)
+   # Build SDLmain
 diff --git a/README.md b/README.md
-index fa7f7ba0b..d1719bb6f 100644
+index fa7f7ba0b5..d1719bb6fe 100644
 --- a/README.md
 +++ b/README.md
 @@ -1,17 +1,17 @@
@@ -123,7 +187,7 @@ index fa7f7ba0b..d1719bb6f 100644
 +Sam Lantinga (slouken@libsdl.org)
 diff --git a/docs/README-wiiu.md b/docs/README-wiiu.md
 new file mode 100644
-index 000000000..3a697c56f
+index 0000000000..3a697c56fa
 --- /dev/null
 +++ b/docs/README-wiiu.md
 @@ -0,0 +1,21 @@
@@ -149,7 +213,7 @@ index 000000000..3a697c56f
 +-----
 +* TODO
 diff --git a/docs/README.md b/docs/README.md
-index 6813f75fb..cd60e860c 100644
+index 6813f75fb3..cd60e860c9 100644
 --- a/docs/README.md
 +++ b/docs/README.md
 @@ -49,6 +49,7 @@ More documentation and FAQs are available online at [the wiki](http://wiki.libsd
@@ -161,10 +225,10 @@ index 6813f75fb..cd60e860c 100644
  If you need help with the library, or just want to discuss SDL related
  issues, you can join the [SDL Discourse](https://discourse.libsdl.org/),
 diff --git a/include/SDL_atomic.h b/include/SDL_atomic.h
-index 1dd816a38..26b5fd2ef 100644
+index 226ec7c67f..1d539bb322 100644
 --- a/include/SDL_atomic.h
 +++ b/include/SDL_atomic.h
-@@ -230,6 +230,10 @@ typedef void (*SDL_KernelMemoryBarrierFunc)();
+@@ -221,6 +221,10 @@ typedef void (*SDL_KernelMemoryBarrierFunc)();
  #include <mbarrier.h>
  #define SDL_MemoryBarrierRelease()  __machine_rel_barrier()
  #define SDL_MemoryBarrierAcquire()  __machine_acq_barrier()
@@ -175,7 +239,7 @@ index 1dd816a38..26b5fd2ef 100644
  #else
  /* This is correct for the x86 and x64 CPUs, and we'll expand this over time. */
  #define SDL_MemoryBarrierRelease()  SDL_CompilerBarrier()
-@@ -242,7 +246,7 @@ typedef void (*SDL_KernelMemoryBarrierFunc)();
+@@ -233,7 +237,7 @@ typedef void (*SDL_KernelMemoryBarrierFunc)();
      #define SDL_CPUPauseInstruction() __asm__ __volatile__("pause\n")  /* Some assemblers can't do REP NOP, so go with PAUSE. */
  #elif (defined(__arm__) && defined(__ARM_ARCH) && __ARM_ARCH >= 7) || defined(__aarch64__)
      #define SDL_CPUPauseInstruction() __asm__ __volatile__("yield" ::: "memory")
@@ -185,7 +249,7 @@ index 1dd816a38..26b5fd2ef 100644
  #elif defined(_MSC_VER) && (defined(_M_IX86) || defined(_M_X64))
      #define SDL_CPUPauseInstruction() _mm_pause()  /* this is actually "rep nop" and not a SIMD instruction. No inline asm in MSVC x86-64! */
 diff --git a/include/SDL_config.h.cmake b/include/SDL_config.h.cmake
-index 35923d020..ab5b33274 100644
+index ef014e7ddc..ca2906cd6e 100644
 --- a/include/SDL_config.h.cmake
 +++ b/include/SDL_config.h.cmake
 @@ -329,6 +329,7 @@
@@ -237,23 +301,23 @@ index 35923d020..ab5b33274 100644
  /* Enable OpenGL support */
  #cmakedefine SDL_VIDEO_OPENGL @SDL_VIDEO_OPENGL@
 diff --git a/include/SDL_endian.h b/include/SDL_endian.h
-index 71bc06729..94a790378 100644
+index 5be66eafb9..5ae71b7d7a 100644
 --- a/include/SDL_endian.h
 +++ b/include/SDL_endian.h
-@@ -79,7 +79,7 @@ _m_prefetch(void *__P)
+@@ -88,7 +88,7 @@ _m_prefetch(void *__P)
      defined(__m68k__) || defined(mc68000) || defined(_M_M68K) || \
      (defined(__MIPS__) && defined(__MIPSEB__)) || \
      defined(__ppc__) || defined(__POWERPC__) || defined(__powerpc__) || defined(__PPC__) || \
--    defined(__sparc__)
-+    defined(__sparc__) || defined(_BIG_ENDIAN) || (__BIG_ENDIAN__ == 1)
+-    defined(__sparc__) || defined(__sparc)
++    defined(__sparc__) || defined(__sparc) || defined(_BIG_ENDIAN) || (__BIG_ENDIAN__ == 1)
  #define SDL_BYTEORDER   SDL_BIG_ENDIAN
  #else
  #define SDL_BYTEORDER   SDL_LIL_ENDIAN
 diff --git a/include/SDL_platform.h b/include/SDL_platform.h
-index d2a7e052d..262e1c37f 100644
+index 64ece4fe70..cdea155cf2 100644
 --- a/include/SDL_platform.h
 +++ b/include/SDL_platform.h
-@@ -200,6 +200,10 @@
+@@ -214,6 +214,10 @@
  #if defined(PS2)
  #define __PS2__ 1
  #endif
@@ -264,8 +328,241 @@ index d2a7e052d..262e1c37f 100644
  
  /* The NACL compiler defines __native_client__ and __pnacl__
   * Ref: http://www.chromium.org/nativeclient/pnacl/stability-of-the-pnacl-bitcode-abi
+diff --git a/include/SDL_system.h b/include/SDL_system.h
+index 2f7a236f17..6e42ad7219 100644
+--- a/include/SDL_system.h
++++ b/include/SDL_system.h
+@@ -631,6 +631,202 @@ extern DECLSPEC int SDLCALL SDL_GDKGetDefaultUser(XUserHandle * outUserHandle);
+ 
+ #endif
+ 
++/* Platform specific functions for Wii U */
++#if defined(__WIIU__)
++typedef enum SDL_WiiUSysWMEventType {
++    /** Sent before any text input event. */
++    SDL_WIIU_SYSWM_SWKBD_OK_START_EVENT = 1,
++    /** Sent after all text input events. */
++    SDL_WIIU_SYSWM_SWKBD_OK_FINISH_EVENT,
++    /** Sent after the swkbd was canceled. */
++    SDL_WIIU_SYSWM_SWKBD_CANCEL_EVENT
++} SDL_WiiUSysWMEventType;
++
++/**
++ * Select the swkbd keyboard mode.
++ *
++ * \sa SDL_WiiUSetSWKBDKeyboardMode
++ */
++typedef enum SDL_WiiUSWKBDKeyboardMode {
++    /** Full keyboard. */
++    SDL_WIIU_SWKBD_KEYBOARD_MODE_FULL,
++    /** Numeric keyboard. */
++    SDL_WIIU_SWKBD_KEYBOARD_MODE_NUMPAD,
++    /** Restricted keyboard (only letters, numbers and symbols.) */
++    SDL_WIIU_SWKBD_KEYBOARD_MODE_RESTRICTED,
++    /** NNID keyboard. */
++    SDL_WIIU_SWKBD_KEYBOARD_MODE_NNID
++} SDL_WiiUSWKBDKeyboardMode;
++
++/**
++ * Sets the swkbd's keyboard mode.
++ *
++ * \param mode One of SDL_WiiUSWKBDKeyboardMode. The default is
++ * `SDL_WIIU_SWKBD_KEYBOARD_MODE_FULL`.
++ *
++ * \note
++ * This option is reset to the default value after the swkbd is shown.
++ */
++extern DECLSPEC void SDLCALL SDL_WiiUSetSWKBDKeyboardMode(SDL_WiiUSWKBDKeyboardMode mode);
++
++/**
++ * Sets the label for the swkbd's "OK" button.
++ *
++ * \param label String for the "OK" button, encoded in UTF-8, or `NULL` to use the
++ * default.
++ *
++ * \note
++ * This option is reset to the default value after the swkbd is shown.
++ */
++extern DECLSPEC void SDLCALL SDL_WiiUSetSWKBDOKLabel(const char * label);
++
++/**
++ * Sets the swkbd's word suggestions option.
++ *
++ * \param show `SDL_TRUE` to enable word suggestions. The default is `SDL_TRUE`.
++ *
++ * \note
++ * This option is reset to the default value after the swkbd is shown.
++ */
++extern DECLSPEC void SDLCALL SDL_WiiUSetSWKBDShowWordSuggestions(SDL_bool show);
++
++/**
++ * Sets the swkbd's initial text.
++ *
++ * \param text String for the initial text, encoded in UTF-8, or `NULL` to use the
++ * default (no initial text.)
++ *
++ * \note
++ * This option is reset to the default value after the swkbd is shown.
++ */
++extern DECLSPEC void SDLCALL SDL_WiiUSetSWKBDInitialText(const char * text);
++
++/**
++ * Sets the swkbd's hint text.
++ *
++ * \param text String for the hint text, encoded in UTF-8, or `NULL` to use the default
++ * (no hint.)
++ *
++ * \note
++ * This option is reset to the default value after the swkbd is shown.
++ */
++extern DECLSPEC void SDLCALL SDL_WiiUSetSWKBDHintText(const char * text);
++
++/**
++ * Controls how to display passwwords in the swkbd when in password mode.
++ */
++typedef enum SDL_WiiUSWKBDPasswordMode {
++    SDL_WIIU_SWKBD_PASSWORD_MODE_SHOW, /**< Show password. */
++    SDL_WIIU_SWKBD_PASSWORD_MODE_HIDE, /**< Hide password. */
++    SDL_WIIU_SWKBD_PASSWORD_MODE_FADE  /**< Hide password after 1 second. */
++} SDL_WiiUSWKBDPasswordMode;
++
++/**
++ * Sets the swkbd's password mode.
++ *
++ * \param mode One of of the SDL_WiiUSWKBDPasswordMode values. The default is
++ * `SDL_WIIU_SWKBD_PASSWORD_MODE_SHOW`.
++ *
++ * \note
++ * This option is reset to the default value after the swkbd is shown.
++ *
++ * \sa SDL_WiiUSetSWKBDKeyboardMode
++ */
++extern DECLSPEC void SDLCALL SDL_WiiUSetSWKBDPasswordMode(SDL_WiiUSWKBDPasswordMode mode);
++
++/**
++ * Sets whether to highlight (select) the swkbd's initial text.
++ *
++ * \param highlight `SDL_TRUE` to highlight the initial text. The default is `SDL_FALSE`.
++
++ * \note
++ * This option is reset to the default value after the swkbd is shown.
++ */
++extern DECLSPEC void SDLCALL SDL_WiiUSetSWKBDHighlightInitialText(SDL_bool highlight);
++
++/**
++ * Sets the swkbd's copy-paste button option.
++ *
++ * \param show `SDL_TRUE` to show copy-paste buttons. The default is `SDL_FALSE`.
++ *
++ * \note
++ * This option is reset to the default value after the swkbd is shown.
++ */
++extern DECLSPEC void SDLCALL SDL_WiiUSetSWKBDShowCopyPasteButtons(SDL_bool show);
++
++/**
++ * Sets the swkbd's built-in rendering of the Wii remote pointer.
++ *
++ * \param draw `SDL_TRUE` to let the swkbd draw its own Wii remote pointer. The default is
++ * `SDL_TRUE`.
++ *
++ * This option is reset to the default value after the swkbd is shown.
++ */
++extern DECLSPEC void SDLCALL SDL_WiiUSetSWKBDDrawWiiPointer(SDL_bool draw);
++
++/**
++ * Sets the swkbd's locale (region and language.)
++ *
++ * \param locale String representing the intended keyboard region and language, using
++ * Unix-style locale format (e.g. `"en_US"`, `"fr_CA"`, `ja_JP`, `"en"`.) Set to `NULL` to
++ * use the system region and language. The default is `NULL`.
++ *
++ * The recognized languages are:
++ *   - ja: Japanese
++ *   - en: English
++ *   - fr: French
++ *   - de: German
++ *   - it: Italian
++ *   - es: Spanish
++ *   - nl: Dutch
++ *   - pt: Portuguese
++ *   - ru: Russian
++ *
++ * The recognized regions are:
++ *   - US, CA, MX, BR: mapped to the "USA" console region.
++ *   - DE, ES, FR, GB, IT, NL, PT, RU: mapped to the "EUR" console region.
++ *   - JP: mapped to the "JPN" console region.
++ *
++ * When no country is specified, "jp" will map to the "JPN" region, "en" to "USA" region,
++ * and everything else will map to "EUR" region.
++ *
++ * By default the locale is obtained from the system configuration (cafe.language). The
++ * empty locale string is equivalent to the system configuration.
++ *
++ * \note
++ * The swkbd will be re-initialized after calling this function.
++ */
++extern DECLSPEC void SDLCALL SDL_WiiUSetSWKBDLocale(const char * locale);
++
++/**
++ * Sends VPAD input to the swkbd.
++ *
++ * Call this function at every frame if your application calls `VPADRead()` instead of
++ * using the SDL game controller subsystem.
++ *
++ * \param vpad Pointer to a `VPADStatus` object.
++ * \returns `SDL_TRUE` if the swkbd is visible and is going to use the input.
++ *
++ * \note
++ * The touch point in `tpNormal` should contain a calibrated point, by calling
++ * `VPADGetTPCalibratedPoint()`, prior to calling this function.
++ */
++extern DECLSPEC SDL_bool SDLCALL SDL_WiiUSetSWKBDVPAD(const void * vpad);
++
++/**
++ * Sends KPAD input to the swkbd.
++ *
++ * Call this function at every frame if you call `KPADRead()` or `KPADReadEx()` in your
++ * application, instead of using the SDL game controller subsystem.
++ *
++ * \param channel Number of channel.
++ * \param kpad Pointer to a `KPADStatus` object.
++ * \returns `SDL_TRUE` if the swkbd is visible and is going to use the input.
++ */
++extern DECLSPEC SDL_bool SDLCALL SDL_WiiUSetSWKBDKPAD(int channel, const void * kpad);
++
++#endif /* Wii U */
++
+ /* Ends C function definitions when using C++ */
+ #ifdef __cplusplus
+ }
+diff --git a/include/SDL_syswm.h b/include/SDL_syswm.h
+index 18f6873299..98db87b52b 100644
+--- a/include/SDL_syswm.h
++++ b/include/SDL_syswm.h
+@@ -148,7 +148,8 @@ typedef enum SDL_SYSWM_TYPE
+     SDL_SYSWM_OS2,
+     SDL_SYSWM_HAIKU,
+     SDL_SYSWM_KMSDRM,
+-    SDL_SYSWM_RISCOS
++    SDL_SYSWM_RISCOS,
++    SDL_SYSWM_WIIU
+ } SDL_SYSWM_TYPE;
+ 
+ /**
+@@ -211,6 +212,11 @@ struct SDL_SysWMmsg
+             MPARAM mp1;                 /**< The first first message parameter */
+             MPARAM mp2;                 /**< The second first message parameter */
+         } os2;
++#endif
++#if defined(SDL_VIDEO_DRIVER_WIIU)
++        struct {
++            unsigned event;
++        } wiiu;
+ #endif
+         /* Can't have an empty union */
+         int dummy;
 diff --git a/include/SDL_test_common.h b/include/SDL_test_common.h
-index 6de63cad6..76c6c6c8d 100644
+index 64b5f83e80..e670693a8c 100644
 --- a/include/SDL_test_common.h
 +++ b/include/SDL_test_common.h
 @@ -40,6 +40,9 @@
@@ -279,25 +576,26 @@ index 6de63cad6..76c6c6c8d 100644
  #define DEFAULT_WINDOW_WIDTH  640
  #define DEFAULT_WINDOW_HEIGHT 480
 diff --git a/include/SDL_video.h b/include/SDL_video.h
-index c8b2d7a0d..a0e403941 100644
+index 2db5552fa2..c4d400204b 100644
 --- a/include/SDL_video.h
 +++ b/include/SDL_video.h
-@@ -124,6 +124,8 @@ typedef enum
+@@ -124,6 +124,9 @@ typedef enum SDL_WindowFlags
      SDL_WINDOW_TOOLTIP          = 0x00040000,   /**< window should be treated as a tooltip */
      SDL_WINDOW_POPUP_MENU       = 0x00080000,   /**< window should be treated as a popup menu */
      SDL_WINDOW_KEYBOARD_GRABBED = 0x00100000,   /**< window has grabbed keyboard input */
 +    SDL_WINDOW_WIIU_GAMEPAD_ONLY = 0x01000000,      /**< Wii U: window must be drawn only on the Gamepad */
 +    SDL_WINDOW_WIIU_TV_ONLY      = 0x02000000,      /**< Wii U: window must be drawn only on the TV */
++    SDL_WINDOW_WIIU_PREVENT_SWAP = 0x04000000,      /**< Wii U: window will not swap scanbuffers on present */
      SDL_WINDOW_VULKAN           = 0x10000000,   /**< window usable for Vulkan surface */
      SDL_WINDOW_METAL            = 0x20000000,   /**< window usable for Metal view */
  
 diff --git a/src/SDL.c b/src/SDL.c
-index 56049adf0..66ab88ab1 100644
+index e21b500abb..5f8d86c1a7 100644
 --- a/src/SDL.c
 +++ b/src/SDL.c
-@@ -610,6 +610,8 @@ const char *SDL_GetPlatform(void)
+@@ -642,6 +642,8 @@ const char *SDL_GetPlatform(void)
      return "Nokia N-Gage";
- #elif __3DS__
+ #elif defined(__3DS__)
      return "Nintendo 3DS";
 +#elif __WIIU__
 +    return "Wii U";
@@ -305,10 +603,10 @@ index 56049adf0..66ab88ab1 100644
      return "Unknown (see SDL_platform.h)";
  #endif
 diff --git a/src/SDL_log.c b/src/SDL_log.c
-index ab6e7c2cb..41461c96e 100644
+index 47f5b7251e..25e375bdd3 100644
 --- a/src/SDL_log.c
 +++ b/src/SDL_log.c
-@@ -39,6 +39,10 @@
+@@ -40,6 +40,10 @@
  #include <android/log.h>
  #endif
  
@@ -319,7 +617,7 @@ index ab6e7c2cb..41461c96e 100644
  #include "stdlib/SDL_vacopy.h"
  
  /* The size of the stack buffer to use for rendering log messages. */
-@@ -449,6 +453,10 @@ static void SDLCALL SDL_LogOutput(void *userdata, int category, SDL_LogPriority
+@@ -555,6 +559,10 @@ static void SDLCALL SDL_LogOutput(void *userdata, int category, SDL_LogPriority
          SDL_NSLog(SDL_priority_prefixes[priority], message);
          return;
      }
@@ -331,7 +629,7 @@ index ab6e7c2cb..41461c96e 100644
      {
          FILE *pFile;
 diff --git a/src/atomic/SDL_atomic.c b/src/atomic/SDL_atomic.c
-index 4e10d52db..0a3c85dd2 100644
+index ea65796e7f..82c4d692ba 100644
 --- a/src/atomic/SDL_atomic.c
 +++ b/src/atomic/SDL_atomic.c
 @@ -35,6 +35,10 @@
@@ -364,7 +662,7 @@ index 4e10d52db..0a3c85dd2 100644
  
 -#if !defined(HAVE_MSC_ATOMICS) && !defined(HAVE_GCC_ATOMICS) && !defined(__MACOSX__) && !defined(__SOLARIS__) && !defined(HAVE_WATCOM_ATOMICS)
 +#if !defined(HAVE_MSC_ATOMICS) && !defined(HAVE_GCC_ATOMICS) && !defined(__MACOSX__) && !defined(__SOLARIS__) && !defined(HAVE_WATCOM_ATOMICS) && !defined(__WIIU__)
- #define EMULATE_CAS 1
+ #define EMULATE_CAS
  #endif
  
 @@ -131,6 +135,8 @@ SDL_bool SDL_AtomicCAS(SDL_atomic_t *a, int oldval, int newval)
@@ -413,7 +711,7 @@ index 4e10d52db..0a3c85dd2 100644
      return __sync_fetch_and_add(&a->value, v);
  #elif defined(__SOLARIS__)
 diff --git a/src/atomic/SDL_spinlock.c b/src/atomic/SDL_spinlock.c
-index 9fd3e6167..4fdc1024c 100644
+index bdfa082d0d..95b3a7fa22 100644
 --- a/src/atomic/SDL_spinlock.c
 +++ b/src/atomic/SDL_spinlock.c
 @@ -36,6 +36,11 @@
@@ -450,21 +748,21 @@ index 9fd3e6167..4fdc1024c 100644
      *lock = 0;
  #endif
 diff --git a/src/audio/SDL_audio.c b/src/audio/SDL_audio.c
-index 60242e60a..936404d95 100644
+index 1ab847aa49..a6f2da450c 100644
 --- a/src/audio/SDL_audio.c
 +++ b/src/audio/SDL_audio.c
-@@ -123,6 +123,9 @@ static const AudioBootStrap *const bootstrap[] = {
- #if SDL_AUDIO_DRIVER_OS2
-     &OS2AUDIO_bootstrap,
- #endif
-+#if SDL_AUDIO_DRIVER_WIIU
-+    &WIIUAUDIO_bootstrap,
-+#endif
- #if SDL_AUDIO_DRIVER_DISK
+@@ -132,6 +132,9 @@ static const AudioBootStrap *const bootstrap[] = {
+ #ifdef SDL_AUDIO_DRIVER_DISK
      &DISKAUDIO_bootstrap,
  #endif
++#ifdef SDL_AUDIO_DRIVER_WIIU
++    &WIIUAUDIO_bootstrap,
++#endif
+ #ifdef SDL_AUDIO_DRIVER_DUMMY
+     &DUMMYAUDIO_bootstrap,
+ #endif
 diff --git a/src/audio/SDL_sysaudio.h b/src/audio/SDL_sysaudio.h
-index c755d4341..052e2cd65 100644
+index 6e8de52915..005386528f 100644
 --- a/src/audio/SDL_sysaudio.h
 +++ b/src/audio/SDL_sysaudio.h
 @@ -209,6 +209,7 @@ extern AudioBootStrap VITAAUD_bootstrap;
@@ -477,10 +775,10 @@ index c755d4341..052e2cd65 100644
  
 diff --git a/src/audio/wiiu/SDL_wiiuaudio.c b/src/audio/wiiu/SDL_wiiuaudio.c
 new file mode 100644
-index 000000000..e6f128915
+index 0000000000..da02839dc3
 --- /dev/null
 +++ b/src/audio/wiiu/SDL_wiiuaudio.c
-@@ -0,0 +1,425 @@
+@@ -0,0 +1,470 @@
 +/*
 +  Simple DirectMedia Layer
 +  Copyright (C) 2018-2018 Ash Logan <ash@heyquark.com>
@@ -544,13 +842,11 @@ index 000000000..e6f128915
 +/*  +1, but never goes above NUM_BUFFERS */
 +#define next_id(id) (id + 1) % NUM_BUFFERS
 +
-+static int WIIUAUDIO_OpenDevice(_THIS, const char* devname) {
-+    int ret = 0;
++static int _WIIUAUDIO_OpenDeviceFunction(_THIS) {
 +    AXVoiceOffsets offs;
 +    AXVoiceVeData vol = {
 +        .volume = 0x8000,
 +    };
-+    uint32_t old_affinity;
 +    float srcratio;
 +    Uint8* mixbuf = NULL;
 +    uint32_t mixbuf_allocation_count = 0;
@@ -562,10 +858,6 @@ index 000000000..e6f128915
 +    }
 +
 +    SDL_zerop(this->hidden);
-+
-+/*  We *must not* change cores when setting stuff up */
-+    old_affinity = OSGetThreadAffinity(OSGetCurrentThread());
-+    OSSetThreadAffinity(OSGetCurrentThread(), AX_MAIN_AFFINITY);
 +
 +/*  Take a quick aside to init the wiiu audio */
 +    if (!AXIsInit()) {
@@ -630,8 +922,7 @@ index 000000000..e6f128915
 +
 +    if (!mixbuf) {
 +        printf("Couldn't allocate mix buffer\n");
-+        ret = SDL_OutOfMemory();
-+        goto end;
++        return SDL_OutOfMemory();
 +    }
 +
 +    memset(mixbuf, 0, this->spec.size * NUM_BUFFERS);
@@ -646,8 +937,7 @@ index 000000000..e6f128915
 +    if (this->hidden->deintvbuf == NULL) {
 +        AXQuit();
 +        printf("DEBUG: Couldn't allocate deinterleave buffer");
-+        ret = SDL_SetError("Couldn't allocate deinterleave buffer");
-+        goto end;
++        return SDL_SetError("Couldn't allocate deinterleave buffer");
 +    }
 +
 +
@@ -657,8 +947,7 @@ index 000000000..e6f128915
 +        if (!this->hidden->voice[i]) {
 +            AXQuit();
 +            printf("DEBUG: couldn't get voice\n");
-+            ret = SDL_OutOfMemory();
-+            goto end;
++            return SDL_OutOfMemory();
 +        }
 +
 +    /*  Start messing with it */
@@ -730,10 +1019,64 @@ index 000000000..e6f128915
 +    cb_this = this; //wish there was a better way
 +    AXRegisterAppFrameCallback(_WIIUAUDIO_framecallback);
 +
-+end: ;
-+/*  Put the thread affinity back to normal - we won't call any more AX funcs */
-+    OSSetThreadAffinity(OSGetCurrentThread(), old_affinity);
-+    return ret;
++    return 0;
++}
++
++static void _WIIUAUDIO_ThreadDeallocator(OSThread *thread, void *stack) {
++   free(thread);
++   free(stack);
++}
++
++static void _WIIUAUDIO_ThreadCleanup(OSThread *thread, void *stack) {
++}
++
++static int WIIUAUDIO_OpenDevice(_THIS, const char *devname) {
++    int result;
++
++    /* AX functions need to run from the same core.
++       Since we cannot easily change the affinity of the currently running thread, we create a new one if necessary.
++       This thread only runs on CPU1 (AX_MAIN_AFFINITY) and will be joined after initialization is done. */
++    if (OSGetThreadAffinity(OSGetCurrentThread()) != AX_MAIN_AFFINITY) {
++        OSThread *thread;
++        uint32_t stackSize = 32 * 1024;
++        uint8_t *stack;
++        int32_t priority = OSGetThreadPriority(OSGetCurrentThread());
++
++        thread = (OSThread *)memalign(16, sizeof(OSThread));
++        if (!thread) {
++            return SDL_OutOfMemory();
++        }
++
++        stack = memalign(16, stackSize);
++        if (!stack) {
++            free(thread);
++            return SDL_OutOfMemory();
++        }
++
++        if (!OSCreateThread(thread,
++                            (OSThreadEntryPointFn)_WIIUAUDIO_OpenDeviceFunction,
++                            (int32_t)this,
++                            NULL,
++                            stack + stackSize,
++                            stackSize,
++                            priority,
++                            AX_MAIN_AFFINITY))
++        {
++            return SDL_SetError("OSCreateThread() failed");
++        }
++
++        OSSetThreadDeallocator(thread, &_WIIUAUDIO_ThreadDeallocator);
++        OSSetThreadCleanupCallback(thread, &_WIIUAUDIO_ThreadCleanup);
++        OSResumeThread(thread);
++
++        if (!OSJoinThread(thread, &result)) {
++            return SDL_SetError("OSJoinThread() failed");
++        }
++    } else {
++        result = _WIIUAUDIO_OpenDeviceFunction(this);
++    }
++
++    return result;
 +}
 +
 +/*  Called every 3ms before a frame of audio is rendered. Keep it fast! */
@@ -888,7 +1231,7 @@ index 000000000..e6f128915
 +    OSSetThreadPriority(currentThread, priority);
 +}
 +
-+static SDL_bool WIIUAUDIO_Init(SDL_AudioDriverImpl* impl) {
++static SDL_bool WIIUAUDIO_Init(SDL_AudioDriverImpl *impl) {
 +    impl->OpenDevice = WIIUAUDIO_OpenDevice;
 +    impl->PlayDevice = WIIUAUDIO_PlayDevice;
 +    impl->WaitDevice = WIIUAUDIO_WaitDevice;
@@ -908,7 +1251,7 @@ index 000000000..e6f128915
 +#endif //SDL_AUDIO_DRIVER_WIIU
 diff --git a/src/audio/wiiu/SDL_wiiuaudio.h b/src/audio/wiiu/SDL_wiiuaudio.h
 new file mode 100644
-index 000000000..41cb4a48b
+index 0000000000..41cb4a48b6
 --- /dev/null
 +++ b/src/audio/wiiu/SDL_wiiuaudio.h
 @@ -0,0 +1,51 @@
@@ -965,7 +1308,7 @@ index 000000000..41cb4a48b
 +#endif /* SDL_wiiuaudio_h_ */
 diff --git a/src/audio/wiiu/SDL_wiiuaudio_mix.h b/src/audio/wiiu/SDL_wiiuaudio_mix.h
 new file mode 100644
-index 000000000..57b661c89
+index 0000000000..57b661c89d
 --- /dev/null
 +++ b/src/audio/wiiu/SDL_wiiuaudio_mix.h
 @@ -0,0 +1,65 @@
@@ -1035,7 +1378,7 @@ index 000000000..57b661c89
 +
 +#endif //SDL_wiiuaudio_mix_h_
 diff --git a/src/dynapi/SDL_dynapi.h b/src/dynapi/SDL_dynapi.h
-index 99ca08008..d684b5fed 100644
+index b5c9cbbe33..a9c1b2f081 100644
 --- a/src/dynapi/SDL_dynapi.h
 +++ b/src/dynapi/SDL_dynapi.h
 @@ -59,6 +59,8 @@
@@ -1047,13 +1390,66 @@ index 99ca08008..d684b5fed 100644
  #elif defined(__clang_analyzer__) || defined(SDL_THREAD_SAFETY_ANALYSIS)
  #define SDL_DYNAMIC_API 0 /* Turn off for static analysis, so reports are more clear. */
  #elif defined(__VITA__)
+diff --git a/src/events/SDL_events_c.h b/src/events/SDL_events_c.h
+index 572734ecd0..8050f2bbf6 100644
+--- a/src/events/SDL_events_c.h
++++ b/src/events/SDL_events_c.h
+@@ -24,6 +24,10 @@
+ 
+ #include "../SDL_internal.h"
+ 
++#ifdef __cplusplus
++extern "C" {
++#endif
++
+ /* Useful functions and variables from SDL_events.c */
+ #include "SDL_events.h"
+ #include "SDL_thread.h"
+@@ -58,6 +62,11 @@ extern void SDL_SendPendingSignalEvents(void);
+ extern int SDL_QuitInit(void);
+ extern void SDL_QuitQuit(void);
+ 
++#ifdef __cplusplus
++}
++#endif
++
++
+ #endif /* SDL_events_c_h_ */
+ 
+ /* vi: set ts=4 sw=4 expandtab: */
+diff --git a/src/events/SDL_keyboard_c.h b/src/events/SDL_keyboard_c.h
+index bbad086763..b9ed7153ae 100644
+--- a/src/events/SDL_keyboard_c.h
++++ b/src/events/SDL_keyboard_c.h
+@@ -26,6 +26,10 @@
+ #include "SDL_keycode.h"
+ #include "SDL_events.h"
+ 
++#ifdef __cplusplus
++extern "C" {
++#endif
++
+ /* Initialize the keyboard subsystem */
+ extern int SDL_KeyboardInit(void);
+ 
+@@ -84,6 +88,10 @@ extern char *SDL_UCS4ToUTF8(Uint32 ch, char *dst);
+ /* Toggle on or off pieces of the keyboard mod state. */
+ extern void SDL_ToggleModState(const SDL_Keymod modstate, const SDL_bool toggle);
+ 
++#ifdef __cplusplus
++}
++#endif
++
+ #endif /* SDL_keyboard_c_h_ */
+ 
+ /* vi: set ts=4 sw=4 expandtab: */
 diff --git a/src/joystick/SDL_gamecontrollerdb.h b/src/joystick/SDL_gamecontrollerdb.h
-index f926c1612..cc5c44474 100644
+index 1366fb25d7..c551e2a24d 100644
 --- a/src/joystick/SDL_gamecontrollerdb.h
 +++ b/src/joystick/SDL_gamecontrollerdb.h
-@@ -991,6 +991,16 @@ static const char *s_ControllerMappings[] = {
+@@ -999,6 +999,16 @@ static const char *s_ControllerMappings[] = {
  #endif
- #if SDL_JOYSTICK_N3DS
+ #ifdef SDL_JOYSTICK_N3DS
      "000000004e696e74656e646f20334400,Nintendo 3DS,crc:3210,a:b0,b:b1,back:b2,dpdown:b7,dpleft:b5,dpright:b4,dpup:b6,leftshoulder:b9,lefttrigger:b14,leftx:a0,lefty:a1,rightshoulder:b8,righttrigger:b15,rightx:a2,righty:a3,start:b3,x:b10,y:b11,",
 +#endif
 +#if defined(SDL_JOYSTICK_WIIU)
@@ -1069,10 +1465,10 @@ index f926c1612..cc5c44474 100644
      "hidapi,*,a:b0,b:b1,back:b4,dpdown:b12,dpleft:b13,dpright:b14,dpup:b11,guide:b5,leftshoulder:b9,leftstick:b7,lefttrigger:a4,leftx:a0,lefty:a1,rightshoulder:b10,rightstick:b8,righttrigger:a5,rightx:a2,righty:a3,start:b6,x:b2,y:b3,",
      NULL
 diff --git a/src/joystick/SDL_joystick.c b/src/joystick/SDL_joystick.c
-index 834e83d99..2bc162aee 100644
+index e968288599..538781c7ae 100644
 --- a/src/joystick/SDL_joystick.c
 +++ b/src/joystick/SDL_joystick.c
-@@ -84,7 +84,10 @@ static SDL_JoystickDriver *SDL_joystick_drivers[] = {
+@@ -85,7 +85,10 @@ static SDL_JoystickDriver *SDL_joystick_drivers[] = {
  #ifdef SDL_JOYSTICK_HAIKU
      &SDL_HAIKU_JoystickDriver,
  #endif
@@ -1085,10 +1481,10 @@ index 834e83d99..2bc162aee 100644
  #endif
  #ifdef SDL_JOYSTICK_OS2
 diff --git a/src/joystick/SDL_sysjoystick.h b/src/joystick/SDL_sysjoystick.h
-index a93fa662c..4f0c0df77 100644
+index cabb69af55..0f53b5eeaf 100644
 --- a/src/joystick/SDL_sysjoystick.h
 +++ b/src/joystick/SDL_sysjoystick.h
-@@ -249,6 +249,7 @@ extern SDL_JoystickDriver SDL_PS2_JoystickDriver;
+@@ -253,6 +253,7 @@ extern SDL_JoystickDriver SDL_PS2_JoystickDriver;
  extern SDL_JoystickDriver SDL_PSP_JoystickDriver;
  extern SDL_JoystickDriver SDL_VITA_JoystickDriver;
  extern SDL_JoystickDriver SDL_N3DS_JoystickDriver;
@@ -1098,10 +1494,10 @@ index a93fa662c..4f0c0df77 100644
  #ifdef __cplusplus
 diff --git a/src/joystick/wiiu/SDL_wiiujoystick.c b/src/joystick/wiiu/SDL_wiiujoystick.c
 new file mode 100644
-index 000000000..312921101
+index 0000000000..4f27b798d3
 --- /dev/null
 +++ b/src/joystick/wiiu/SDL_wiiujoystick.c
-@@ -0,0 +1,647 @@
+@@ -0,0 +1,688 @@
 +/*
 +  Simple DirectMedia Layer
 +  Copyright (C) 2018 Roberto Van Eeden <r.r.qwertyuiop.r.r@gmail.com>
@@ -1141,8 +1537,11 @@ index 000000000..312921101
 +#include "SDL_log.h"
 +#include "SDL_assert.h"
 +#include "SDL_events.h"
++#include "SDL_system.h"
 +
 +#include "SDL_wiiujoystick.h"
++#include "../../video/SDL_sysvideo.h"
++#include "../../video/wiiu/SDL_wiiuswkbd.h"
 +
 +//index with device_index, get WIIU_DEVICE*
 +static int deviceMap[MAX_CONTROLLERS];
@@ -1154,6 +1553,8 @@ index 000000000..312921101
 +static int WIIU_JoystickGetCount(void);
 +static void WIIU_JoystickDetect(void);
 +static const char *WIIU_JoystickGetDeviceName(int device_index);
++static const char *WIIU_JoystickGetDevicePath(int device_index);
++static int WIIU_JoystickGetDeviceSteamVirtualGamepadSlot(int device_index);
 +static int WIIU_JoystickGetDevicePlayerIndex(int device_index);
 +static void WIIU_JoystickSetDevicePlayerIndex(int device_index, int player_index);
 +static SDL_JoystickGUID WIIU_JoystickGetDeviceGUID(int device_index);
@@ -1169,6 +1570,7 @@ index 000000000..312921101
 +static void WIIU_JoystickClose(SDL_Joystick *joystick);
 +static void WIIU_JoystickQuit(void);
 +static SDL_bool WIIU_JoystickGetGamepadMapping(int device_index, SDL_GamepadMapping * out);
++static SDL_Window *WIIU_GetGamepadWindow(void);
 +
 +static int WIIU_GetDeviceForIndex(int device_index) {
 +	return deviceMap[device_index];
@@ -1214,6 +1616,18 @@ index 000000000..312921101
 +	}
 +}
 +
++static SDL_Window *WIIU_GetGamepadWindow(void) {
++	// Find first visible window that is not TV-exclusive.
++	SDL_VideoDevice *dev = SDL_GetVideoDevice();
++	if (!dev)
++		return NULL;
++	for (SDL_Window *win = dev->windows; win; win = win->next) {
++		if ((win->flags & SDL_WINDOW_SHOWN) && !(win->flags & SDL_WINDOW_WIIU_TV_ONLY))
++			return win;
++	}
++	return NULL;
++}
++
 +/* Function to scan the system for joysticks.
 + * Joystick 0 should be the system default joystick.
 + * This function should return 0, or -1 on an unrecoverable error.
@@ -1242,7 +1656,7 @@ index 000000000..312921101
 +static void WIIU_JoystickDetect(void)
 +{
 +/*	Make sure there are no dangling instances or device indexes
-+ 	These checks *should* be unneccesary, remove once battle-tested */
++	These checks *should* be unneccesary, remove once battle-tested */
 +	for (int i = 0; i < MAX_CONTROLLERS; i++) {
 +		if (deviceMap[i] == WIIU_DEVICE_INVALID && instanceMap[i] != -1) {
 +
@@ -1346,9 +1760,14 @@ index 000000000..312921101
 +	return "Unknown";
 +}
 +
-+static const char * WIIU_JoystickGetDevicePath(int device_index)
++static const char *WIIU_JoystickGetDevicePath(int device_index)
 +{
 +    return NULL;
++}
++
++static int WIIU_JoystickGetDeviceSteamVirtualGamepadSlot(int device_index)
++{
++	return -1;
 +}
 +
 +/* Function to get the player index of a joystick */
@@ -1554,39 +1973,49 @@ index 000000000..312921101
 +
 +		VPADStatus vpad;
 +		VPADReadError error;
-+		VPADTouchData tpdata;
-+		VPADRead(VPAD_CHAN_0, &vpad, 1, &error);
++		int32_t read;
++		
++		read = VPADRead(VPAD_CHAN_0, &vpad, 1, &error);
 +		if (error == VPAD_READ_INVALID_CONTROLLER) {
 +			/* Gamepad disconnected! */
 +			SDL_PrivateJoystickRemoved(joystick->instance_id);
 +			/* Unlink Gamepad, device_index, instance_id */
 +			WIIU_RemoveDevice(WIIU_DEVICE_GAMEPAD);
-+		} else if (error != VPAD_READ_SUCCESS) {
++			return;
++		} else if (read != 1 || error != VPAD_READ_SUCCESS) {
 +			return;
 +		}
 +
 +		/* touchscreen */
-+		VPADGetTPCalibratedPoint(VPAD_CHAN_0, &tpdata, &vpad.tpNormal);
-+		if (tpdata.touched) {
++		VPADGetTPCalibratedPoint(VPAD_CHAN_0, &vpad.tpNormal, &vpad.tpNormal);
++
++		if (SDL_WiiUSetSWKBDVPAD(&vpad)) {
++			/* Do not generate SDL events when the swkbd is consuming the input. */
++			return;
++		}
++
++		if (vpad.tpNormal.touched) {
++			SDL_Window *window = WIIU_GetGamepadWindow();
 +			if (!last_touched) {
 +				/* Send an initial touch */
-+				SDL_SendTouch(0, 0, NULL, SDL_TRUE,
-+						(float) tpdata.x / 1280.0f,
-+						(float) tpdata.y / 720.0f, 1);
++				SDL_SendTouch(0, 0, window, SDL_TRUE,
++						(float) vpad.tpNormal.x / 1280.0f,
++						(float) vpad.tpNormal.y / 720.0f, 1);
 +			}
 +
 +			/* Always send the motion */
-+			SDL_SendTouchMotion(0, 0, NULL,
-+					(float) tpdata.x / 1280.0f,
-+					(float) tpdata.y / 720.0f, 1);
++			SDL_SendTouchMotion(0, 0, window,
++					(float) vpad.tpNormal.x / 1280.0f,
++					(float) vpad.tpNormal.y / 720.0f, 1);
 +
 +			/* Update old values */
-+			last_touch_x = tpdata.x;
-+			last_touch_y = tpdata.y;
++			last_touch_x = vpad.tpNormal.x;
++			last_touch_y = vpad.tpNormal.y;
 +			last_touched = 1;
 +		} else if (last_touched) {
++			SDL_Window *window = WIIU_GetGamepadWindow();
 +			/* Finger released from screen */
-+			SDL_SendTouch(0, 0, NULL, SDL_FALSE,
++			SDL_SendTouch(0, 0, window, SDL_FALSE,
 +					(float) last_touch_x / 1280.0f,
 +					(float) last_touch_y / 720.0f, 1);
 +			last_touched = 0;
@@ -1631,14 +2060,21 @@ index 000000000..312921101
 +		WPADExtensionType ext;
 +		KPADStatus kpad;
 +		int32_t err;
++		int32_t read;
 +
 +		if (WPADProbe(WIIU_WPAD_CHAN(wiiu_device), &ext) != 0) {
 +			/* Do nothing, we'll catch it in Detect() */
 +			return;
 +		}
 +
-+		KPADReadEx(WIIU_WPAD_CHAN(wiiu_device), &kpad, 1, &err);
-+		if (err != KPAD_ERROR_OK) return;
++		read = KPADReadEx(WIIU_WPAD_CHAN(wiiu_device), &kpad, 1, &err);
++		if (read != 1 || err != KPAD_ERROR_OK)
++			return;
++
++		if (SDL_WiiUSetSWKBDKPAD(WIIU_WPAD_CHAN(wiiu_device), &kpad)) {
++			/* Do not generate SDL events when the swkbd is consuming the input. */
++			return;
++		}
 +
 +		switch (ext) {
 +		case WPAD_EXT_CORE:
@@ -1731,6 +2167,7 @@ index 000000000..312921101
 +	WIIU_JoystickDetect,
 +	WIIU_JoystickGetDeviceName,
 +	WIIU_JoystickGetDevicePath,
++	WIIU_JoystickGetDeviceSteamVirtualGamepadSlot,
 +	WIIU_JoystickGetDevicePlayerIndex,
 +	WIIU_JoystickSetDevicePlayerIndex,
 +	WIIU_JoystickGetDeviceGUID,
@@ -1751,7 +2188,7 @@ index 000000000..312921101
 +#endif
 diff --git a/src/joystick/wiiu/SDL_wiiujoystick.h b/src/joystick/wiiu/SDL_wiiujoystick.h
 new file mode 100644
-index 000000000..24f79ca76
+index 0000000000..24f79ca76f
 --- /dev/null
 +++ b/src/joystick/wiiu/SDL_wiiujoystick.h
 @@ -0,0 +1,110 @@
@@ -1866,7 +2303,7 @@ index 000000000..24f79ca76
 +    } \
 +}
 diff --git a/src/libm/math_private.h b/src/libm/math_private.h
-index ee67c444e..23fad187b 100644
+index ee67c444ea..23fad187b3 100644
 --- a/src/libm/math_private.h
 +++ b/src/libm/math_private.h
 @@ -27,7 +27,7 @@
@@ -1879,7 +2316,7 @@ index ee67c444e..23fad187b 100644
  #endif
  
 diff --git a/src/render/SDL_render.c b/src/render/SDL_render.c
-index b650c6ac4..846b97b88 100644
+index cc3d16959b..4d2210589f 100644
 --- a/src/render/SDL_render.c
 +++ b/src/render/SDL_render.c
 @@ -38,8 +38,10 @@ that will crash the app. However, these apps _should_ have used
@@ -1895,7 +2332,7 @@ index b650c6ac4..846b97b88 100644
  #define DONT_DRAW_WHILE_HIDDEN 1
  #else
  #define DONT_DRAW_WHILE_HIDDEN 0
-@@ -124,6 +126,9 @@ static const SDL_RenderDriver *render_drivers[] = {
+@@ -131,6 +133,9 @@ static const SDL_RenderDriver *render_drivers[] = {
  #if SDL_VIDEO_RENDER_VITA_GXM
      &VITA_GXM_RenderDriver,
  #endif
@@ -1906,10 +2343,10 @@ index b650c6ac4..846b97b88 100644
      &SW_RenderDriver
  #endif
 diff --git a/src/render/SDL_sysrender.h b/src/render/SDL_sysrender.h
-index 36e9555bb..283fe0e88 100644
+index bab41e7729..93264629e3 100644
 --- a/src/render/SDL_sysrender.h
 +++ b/src/render/SDL_sysrender.h
-@@ -307,6 +307,7 @@ extern SDL_RenderDriver PS2_RenderDriver;
+@@ -309,6 +309,7 @@ extern SDL_RenderDriver PS2_RenderDriver;
  extern SDL_RenderDriver PSP_RenderDriver;
  extern SDL_RenderDriver SW_RenderDriver;
  extern SDL_RenderDriver VITA_GXM_RenderDriver;
@@ -1919,10 +2356,10 @@ index 36e9555bb..283fe0e88 100644
  extern SDL_BlendFactor SDL_GetBlendModeSrcColorFactor(SDL_BlendMode blendMode);
 diff --git a/src/render/wiiu/SDL_render_wiiu.c b/src/render/wiiu/SDL_render_wiiu.c
 new file mode 100644
-index 000000000..c046b0711
+index 0000000000..ba7272cd20
 --- /dev/null
 +++ b/src/render/wiiu/SDL_render_wiiu.c
-@@ -0,0 +1,370 @@
+@@ -0,0 +1,355 @@
 +/*
 +  Simple DirectMedia Layer
 +  Copyright (C) 2018-2019 Ash Logan <ash@heyquark.com>
@@ -1960,22 +2397,13 @@ index 000000000..c046b0711
 +
 +#include <malloc.h>
 +
-+SDL_Renderer *WIIU_SDL_CreateRenderer(SDL_Window * window, Uint32 flags)
++int WIIU_SDL_CreateRenderer(SDL_Renderer * renderer, SDL_Window * window, Uint32 flags)
 +{
-+    SDL_Renderer *renderer;
 +    WIIU_RenderData *data;
-+
-+    renderer = (SDL_Renderer *) SDL_calloc(1, sizeof(*renderer));
-+    if (!renderer) {
-+        SDL_OutOfMemory();
-+        return NULL;
-+    }
 +
 +    data = (WIIU_RenderData *) SDL_calloc(1, sizeof(*data));
 +    if (!data) {
-+        SDL_free(renderer);
-+        SDL_OutOfMemory();
-+        return NULL;
++        return SDL_OutOfMemory();
 +    }
 +
 +    /* Setup renderer functions */
@@ -2038,7 +2466,7 @@ index 000000000..c046b0711
 +    /* Setup colour buffer, rendering to the window */
 +    WIIU_SDL_SetRenderTarget(renderer, NULL);
 +
-+    return renderer;
++    return 0;
 +}
 +
 +SDL_bool WIIU_SDL_SupportsBlendMode(SDL_Renderer * renderer, SDL_BlendMode blendMode)
@@ -2122,11 +2550,6 @@ index 000000000..c046b0711
 +    /* make sure we're using the correct renderer ctx */
 +    GX2SetContextState(data->ctx);
 +
-+    /* Wait for the texture rendering to finish if it is still in use by the GPU */
-+    if (WIIU_TextureInUse(data, tdata)) {
-+        WIIU_TextureWaitDone(data, tdata);
-+    }
-+
 +    /* Update context state */
 +    GX2SetColorBuffer(&tdata->cbuf, GX2_RENDER_TARGET_0);
 +
@@ -2151,7 +2574,6 @@ index 000000000..c046b0711
 +    WIIU_SDL_DestroyShaders();
 +
 +    SDL_free(data);
-+    SDL_free(renderer);
 +}
 +
 +int WIIU_SDL_RenderReadPixels(SDL_Renderer * renderer, const SDL_Rect * rect,
@@ -2285,8 +2707,8 @@ index 000000000..c046b0711
 +
 +            SDL_PIXELFORMAT_ARGB2101010,
 +        },
-+        .max_texture_width = 0,
-+        .max_texture_height = 0,
++        .max_texture_width = 8192,
++        .max_texture_height = 8192,
 +    },
 +};
 +
@@ -2295,7 +2717,7 @@ index 000000000..c046b0711
 +/* vi: set ts=4 sw=4 expandtab: */
 diff --git a/src/render/wiiu/SDL_render_wiiu.h b/src/render/wiiu/SDL_render_wiiu.h
 new file mode 100644
-index 000000000..4e015ebb8
+index 0000000000..5ded006aca
 --- /dev/null
 +++ b/src/render/wiiu/SDL_render_wiiu.h
 @@ -0,0 +1,315 @@
@@ -2404,7 +2826,7 @@ index 000000000..4e015ebb8
 +#define WIIU_TEXTURE_MEM1_MAGIC (void *)0xCAFE0001
 +
 +/* SDL_render API implementation */
-+SDL_Renderer *WIIU_SDL_CreateRenderer(SDL_Window * window, Uint32 flags);
++int WIIU_SDL_CreateRenderer(SDL_Renderer * renderer, SDL_Window * window, Uint32 flags);
 +void WIIU_SDL_WindowEvent(SDL_Renderer * renderer,
 +                             const SDL_WindowEvent *event);
 +SDL_bool WIIU_SDL_SupportsBlendMode(SDL_Renderer * renderer, SDL_BlendMode blendMode);
@@ -2616,10 +3038,10 @@ index 000000000..4e015ebb8
 +#endif /* SDL_render_wiiu_h */
 diff --git a/src/render/wiiu/SDL_rpresent_wiiu.c b/src/render/wiiu/SDL_rpresent_wiiu.c
 new file mode 100644
-index 000000000..c0ac7a1cc
+index 0000000000..a04d049de7
 --- /dev/null
 +++ b/src/render/wiiu/SDL_rpresent_wiiu.c
-@@ -0,0 +1,86 @@
+@@ -0,0 +1,125 @@
 +/*
 +  Simple DirectMedia Layer
 +  Copyright (C) 2018-2019 Ash Logan <ash@heyquark.com>
@@ -2648,6 +3070,7 @@ index 000000000..c0ac7a1cc
 +
 +#include "../SDL_sysrender.h"
 +#include "SDL_render_wiiu.h"
++#include "../../video/wiiu/SDL_wiiuswkbd.h"
 +
 +#include <gx2/registers.h>
 +#include <gx2/state.h>
@@ -2660,9 +3083,21 @@ index 000000000..c0ac7a1cc
 +
 +int WIIU_SDL_SetVSync(SDL_Renderer * renderer, const int vsync)
 +{
-+    GX2SetSwapInterval(vsync ? 1 : 0);
++    WIIU_VideoData *videodata = (WIIU_VideoData *) SDL_GetVideoDevice()->driverdata;
++    uint32_t swapInterval = vsync ? 1 : 0;
 +
-+    if (GX2GetSwapInterval() > 0) {
++    // Don't attempt to update swap interval if in background
++    if (!videodata->hasForeground) {
++        return 0;
++    }
++
++    if (GX2GetSwapInterval() == swapInterval) {
++        return 0;
++    }
++
++    GX2SetSwapInterval(swapInterval);
++
++    if (swapInterval > 0) {
 +        renderer->info.flags |= SDL_RENDERER_PRESENTVSYNC;
 +    } else {
 +        renderer->info.flags &= ~SDL_RENDERER_PRESENTVSYNC;
@@ -2670,11 +3105,34 @@ index 000000000..c0ac7a1cc
 +    return 0;
 +}
 +
++#define WIIU_FIX_SWKBD_GAMMA
++
 +int WIIU_SDL_RenderPresent(SDL_Renderer * renderer)
 +{
 +    WIIU_RenderData *data = (WIIU_RenderData *) renderer->driverdata;
 +    WIIU_TextureData *tdata = (WIIU_TextureData *) data->windowTex.driverdata;
 +    Uint32 flags = SDL_GetWindowFlags(renderer->window);
++
++    if (WIIU_SWKBD_IsScreenKeyboardShown(NULL, renderer->window)) {
++        GX2SetContextState(NULL);
++#ifdef WIIU_FIX_SWKBD_GAMMA
++        if (tdata->cbuf.surface.format == GX2_SURFACE_FORMAT_UNORM_R8_G8_B8_A8) {
++            GX2SurfaceFormat old_format = tdata->cbuf.surface.format;
++            tdata->cbuf.surface.format = GX2_SURFACE_FORMAT_SRGB_R8_G8_B8_A8;
++            GX2InitColorBufferRegs(&tdata->cbuf);
++            GX2SetColorBuffer(&tdata->cbuf, GX2_RENDER_TARGET_0);
++            WIIU_SWKBD_Draw(renderer->window);
++            tdata->cbuf.surface.format = old_format;
++            GX2InitColorBufferRegs(&tdata->cbuf);
++            GX2SetColorBuffer(&tdata->cbuf, GX2_RENDER_TARGET_0);
++        } else {
++            WIIU_SWKBD_Draw(renderer->window);
++        }
++#else
++        WIIU_SWKBD_Draw(renderer->window);
++#endif
++
++    }
 +
 +    /* Only render to TV if the window is *not* drc-only */
 +    if (!(flags & SDL_WINDOW_WIIU_GAMEPAD_ONLY)) {
@@ -2685,8 +3143,11 @@ index 000000000..c0ac7a1cc
 +        GX2CopyColorBufferToScanBuffer(&tdata->cbuf, GX2_SCAN_TARGET_DRC);
 +    }
 +
-+    /* Swap buffers */
-+    GX2SwapScanBuffers();
++    /* Swap buffers if the window doesn't prevent it */
++    if (!(flags & SDL_WINDOW_WIIU_PREVENT_SWAP)) {
++        GX2SwapScanBuffers();
++    }
++
 +    GX2Flush();
 +
 +    /* Restore SDL context state */
@@ -2708,10 +3169,10 @@ index 000000000..c0ac7a1cc
 +#endif /* SDL_VIDEO_RENDER_WIIU */
 diff --git a/src/render/wiiu/SDL_rqueue_wiiu.c b/src/render/wiiu/SDL_rqueue_wiiu.c
 new file mode 100644
-index 000000000..203648dc0
+index 0000000000..a5fe61eb25
 --- /dev/null
 +++ b/src/render/wiiu/SDL_rqueue_wiiu.c
-@@ -0,0 +1,476 @@
+@@ -0,0 +1,488 @@
 +/*
 +  Simple DirectMedia Layer
 +  Copyright (C) 2022 GaryOderNichts <garyodernichts@gmail.com>
@@ -2774,6 +3235,12 @@ index 000000000..203648dc0
 +    SDL_VertexSolid *vertices;
 +    GX2RBuffer *vertexBuffer;
 +    SDL_Color color;
++
++    // discard empty draws or GX2 will crash
++    if (count < 1) {
++        return -1;
++    }
++
 +    color.r = cmd->data.draw.r;
 +    color.g = cmd->data.draw.g;
 +    color.b = cmd->data.draw.b;
@@ -2813,6 +3280,12 @@ index 000000000..203648dc0
 +    SDL_VertexSolid *vertices;
 +    GX2RBuffer *vertexBuffer;
 +    SDL_Color color;
++
++    // discard empty draws or GX2 will crash
++    if (count < 2) {
++        return -1;
++    }
++
 +    color.r = cmd->data.draw.r;
 +    color.g = cmd->data.draw.g;
 +    color.b = cmd->data.draw.b;
@@ -3190,10 +3663,10 @@ index 000000000..203648dc0
 +#endif /* SDL_VIDEO_RENDER_WIIU */
 diff --git a/src/render/wiiu/SDL_rtexture_wiiu.c b/src/render/wiiu/SDL_rtexture_wiiu.c
 new file mode 100644
-index 000000000..1bb475543
+index 0000000000..b592bd129b
 --- /dev/null
 +++ b/src/render/wiiu/SDL_rtexture_wiiu.c
-@@ -0,0 +1,232 @@
+@@ -0,0 +1,258 @@
 +/*
 +  Simple DirectMedia Layer
 +  Copyright (C) 2018-2019 Ash Logan <ash@heyquark.com>
@@ -3229,6 +3702,10 @@ index 000000000..1bb475543
 +#include <gx2/mem.h>
 +#include <gx2r/surface.h>
 +#include <gx2r/resource.h>
++#include <coreinit/cache.h>
++#include <coreinit/memory.h>
++#include <dmae/mem.h>
++#include <dmae/sync.h>
 +
 +#include <malloc.h>
 +#include <stdarg.h>
@@ -3366,8 +3843,10 @@ index 000000000..1bb475543
 +    WIIU_VideoData *videodata = (WIIU_VideoData *) SDL_GetVideoDevice()->driverdata;
 +    Uint32 BytesPerPixel = SDL_BYTESPERPIXEL(texture->format);
 +    size_t length = rect->w * BytesPerPixel;
++    size_t total_size = length * rect->h;
 +    Uint8 *src = (Uint8 *) pixels, *dst;
 +    int row, dst_pitch;
++    bool src_aligned, dst_aligned;
 +
 +    if (!videodata->hasForeground) {
 +        return 0;
@@ -3376,10 +3855,30 @@ index 000000000..1bb475543
 +    /* We write the rules, and we say all textures are streaming */
 +    WIIU_SDL_LockTexture(renderer, texture, rect, (void**)&dst, &dst_pitch);
 +
-+    for (row = 0; row < rect->h; ++row) {
-+        SDL_memcpy(dst, src, length);
-+        src += pitch;
-+        dst += dst_pitch;
++    if (length == pitch && length == dst_pitch) {
++        /* DMA requires 8 byte alignment */
++        src_aligned = ((uintptr_t)src & 7U) == 0;
++        dst_aligned = ((uintptr_t)dst & 7U) == 0;
++        /* DMA works best on textures bigger than 5KiB */
++        if ((total_size > 5120) && (src_aligned && dst_aligned)) {
++            DCFlushRange(src, total_size);
++            /* Run a single DMA transfer and wait until transfer is done */
++            while (!DMAEWaitDone(DMAECopyMem(dst, src, total_size >> 2, DMAE_SWAP_NONE)));
++        } else {
++            /* Otherwise, fallback to a single memory copy */
++            OSBlockMove(dst, src, total_size, true);
++        }
++    } else {
++        /* Flush source first */
++        DCFlushRange(src, total_size);
++        for (row = 0; row < rect->h; ++row) {
++            /* Do not flush per line here */
++            OSBlockMove(dst, src, length, false);
++            src += pitch;
++            dst += dst_pitch;
++        }
++        /* Now that we're done, we can flush the entire destination at once */
++        DCFlushRange(dst, dst_pitch * rect->h);
 +    }
 +
 +    WIIU_SDL_UnlockTexture(renderer, texture);
@@ -3428,7 +3927,7 @@ index 000000000..1bb475543
 +#endif //SDL_VIDEO_RENDER_WIIU
 diff --git a/src/render/wiiu/SDL_rwindow_wiiu.c b/src/render/wiiu/SDL_rwindow_wiiu.c
 new file mode 100644
-index 000000000..0403e68de
+index 0000000000..0403e68de0
 --- /dev/null
 +++ b/src/render/wiiu/SDL_rwindow_wiiu.c
 @@ -0,0 +1,38 @@
@@ -3472,7 +3971,7 @@ index 000000000..0403e68de
 +#endif //SDL_VIDEO_RENDER_WIIU
 diff --git a/src/render/wiiu/SDL_shaders_wiiu.c b/src/render/wiiu/SDL_shaders_wiiu.c
 new file mode 100644
-index 000000000..03a35c769
+index 0000000000..03a35c7693
 --- /dev/null
 +++ b/src/render/wiiu/SDL_shaders_wiiu.c
 @@ -0,0 +1,257 @@
@@ -3735,7 +4234,7 @@ index 000000000..03a35c769
 +#endif //SDL_VIDEO_RENDER_WIIU
 diff --git a/src/render/wiiu/SDL_shaders_wiiu.h b/src/render/wiiu/SDL_shaders_wiiu.h
 new file mode 100644
-index 000000000..fbb7903af
+index 0000000000..fbb7903af7
 --- /dev/null
 +++ b/src/render/wiiu/SDL_shaders_wiiu.h
 @@ -0,0 +1,51 @@
@@ -3792,7 +4291,7 @@ index 000000000..fbb7903af
 +#endif /* SDL_shaders_wiiu_h */
 diff --git a/src/render/wiiu/shaders/.gitignore b/src/render/wiiu/shaders/.gitignore
 new file mode 100644
-index 000000000..3fd11a5ac
+index 0000000000..3fd11a5acf
 --- /dev/null
 +++ b/src/render/wiiu/shaders/.gitignore
 @@ -0,0 +1,2 @@
@@ -3800,7 +4299,7 @@ index 000000000..3fd11a5ac
 +*.gsh
 diff --git a/src/render/wiiu/shaders/build_shaders.sh b/src/render/wiiu/shaders/build_shaders.sh
 new file mode 100755
-index 000000000..33b7cfc94
+index 0000000000..33b7cfc94d
 --- /dev/null
 +++ b/src/render/wiiu/shaders/build_shaders.sh
 @@ -0,0 +1,17 @@
@@ -3823,7 +4322,7 @@ index 000000000..33b7cfc94
 +echo "Done!"
 diff --git a/src/render/wiiu/shaders/colorShader.inc b/src/render/wiiu/shaders/colorShader.inc
 new file mode 100644
-index 000000000..90543c0ad
+index 0000000000..90543c0ad0
 --- /dev/null
 +++ b/src/render/wiiu/shaders/colorShader.inc
 @@ -0,0 +1,111 @@
@@ -3940,7 +4439,7 @@ index 000000000..90543c0ad
 +unsigned int colorShader_gsh_len = 1296;
 diff --git a/src/render/wiiu/shaders/colorShader.psh b/src/render/wiiu/shaders/colorShader.psh
 new file mode 100644
-index 000000000..bd3d9e700
+index 0000000000..bd3d9e700a
 --- /dev/null
 +++ b/src/render/wiiu/shaders/colorShader.psh
 @@ -0,0 +1,9 @@
@@ -3955,7 +4454,7 @@ index 000000000..bd3d9e700
 +END_OF_PROGRAM
 diff --git a/src/render/wiiu/shaders/colorShader.vsh b/src/render/wiiu/shaders/colorShader.vsh
 new file mode 100644
-index 000000000..ee69cbd3a
+index 0000000000..ee69cbd3ab
 --- /dev/null
 +++ b/src/render/wiiu/shaders/colorShader.vsh
 @@ -0,0 +1,40 @@
@@ -4001,7 +4500,7 @@ index 000000000..ee69cbd3a
 +END_OF_PROGRAM
 diff --git a/src/render/wiiu/shaders/textureShader.inc b/src/render/wiiu/shaders/textureShader.inc
 new file mode 100644
-index 000000000..a47c11136
+index 0000000000..a47c11136f
 --- /dev/null
 +++ b/src/render/wiiu/shaders/textureShader.inc
 @@ -0,0 +1,149 @@
@@ -4156,7 +4655,7 @@ index 000000000..a47c11136
 +unsigned int textureShader_gsh_len = 1752;
 diff --git a/src/render/wiiu/shaders/textureShader.psh b/src/render/wiiu/shaders/textureShader.psh
 new file mode 100644
-index 000000000..18e7770f6
+index 0000000000..18e7770f6b
 --- /dev/null
 +++ b/src/render/wiiu/shaders/textureShader.psh
 @@ -0,0 +1,23 @@
@@ -4185,7 +4684,7 @@ index 000000000..18e7770f6
 +END_OF_PROGRAM
 diff --git a/src/render/wiiu/shaders/textureShader.vsh b/src/render/wiiu/shaders/textureShader.vsh
 new file mode 100644
-index 000000000..86288ff34
+index 0000000000..86288ff347
 --- /dev/null
 +++ b/src/render/wiiu/shaders/textureShader.vsh
 @@ -0,0 +1,47 @@
@@ -4237,7 +4736,7 @@ index 000000000..86288ff34
 +04 EXP_DONE: PARAM1, R3.xy00 NO_BARRIER
 +END_OF_PROGRAM
 diff --git a/src/stdlib/SDL_malloc.c b/src/stdlib/SDL_malloc.c
-index c1aa44414..8c796fba7 100644
+index a045a6aade..1f7c1e4980 100644
 --- a/src/stdlib/SDL_malloc.c
 +++ b/src/stdlib/SDL_malloc.c
 @@ -512,6 +512,12 @@ DEFAULT_MMAP_THRESHOLD       default: 256K
@@ -4254,12 +4753,12 @@ index c1aa44414..8c796fba7 100644
  /* Mac OSX docs advise not to use sbrk; it seems better to use mmap */
  #ifndef HAVE_MORECORE
 diff --git a/src/thread/SDL_thread_c.h b/src/thread/SDL_thread_c.h
-index 278a68026..754c43718 100644
+index d173f1f880..167cf4cc8b 100644
 --- a/src/thread/SDL_thread_c.h
 +++ b/src/thread/SDL_thread_c.h
 @@ -46,6 +46,8 @@
  #include "os2/SDL_systhread_c.h"
- #elif SDL_THREAD_NGAGE
+ #elif defined(SDL_THREAD_NGAGE)
  #include "ngage/SDL_systhread_c.h"
 +#elif SDL_THREAD_WIIU
 +#include "wiiu/SDL_systhread_c.h"
@@ -4268,7 +4767,7 @@ index 278a68026..754c43718 100644
  #include "generic/SDL_systhread_c.h"
 diff --git a/src/thread/wiiu/SDL_syscond.c b/src/thread/wiiu/SDL_syscond.c
 new file mode 100644
-index 000000000..318a50050
+index 0000000000..318a500500
 --- /dev/null
 +++ b/src/thread/wiiu/SDL_syscond.c
 @@ -0,0 +1,146 @@
@@ -4420,7 +4919,7 @@ index 000000000..318a50050
 +/* vi: set ts=4 sw=4 expandtab: */
 diff --git a/src/thread/wiiu/SDL_sysmutex.c b/src/thread/wiiu/SDL_sysmutex.c
 new file mode 100644
-index 000000000..4d80b161e
+index 0000000000..4d80b161e2
 --- /dev/null
 +++ b/src/thread/wiiu/SDL_sysmutex.c
 @@ -0,0 +1,88 @@
@@ -4515,7 +5014,7 @@ index 000000000..4d80b161e
 \ No newline at end of file
 diff --git a/src/thread/wiiu/SDL_sysmutex_c.h b/src/thread/wiiu/SDL_sysmutex_c.h
 new file mode 100644
-index 000000000..2979437b5
+index 0000000000..2979437b59
 --- /dev/null
 +++ b/src/thread/wiiu/SDL_sysmutex_c.h
 @@ -0,0 +1,22 @@
@@ -4543,7 +5042,7 @@ index 000000000..2979437b5
 +/* vi: set ts=4 sw=4 expandtab: */
 diff --git a/src/thread/wiiu/SDL_syssem.c b/src/thread/wiiu/SDL_syssem.c
 new file mode 100644
-index 000000000..a0038aa87
+index 0000000000..a0038aa878
 --- /dev/null
 +++ b/src/thread/wiiu/SDL_syssem.c
 @@ -0,0 +1,145 @@
@@ -4694,7 +5193,7 @@ index 000000000..a0038aa87
 +/* vi: set ts=4 sw=4 expandtab: */
 diff --git a/src/thread/wiiu/SDL_systhread.c b/src/thread/wiiu/SDL_systhread.c
 new file mode 100644
-index 000000000..e2904e119
+index 0000000000..e2904e1197
 --- /dev/null
 +++ b/src/thread/wiiu/SDL_systhread.c
 @@ -0,0 +1,121 @@
@@ -4822,7 +5321,7 @@ index 000000000..e2904e119
 \ No newline at end of file
 diff --git a/src/thread/wiiu/SDL_systhread_c.h b/src/thread/wiiu/SDL_systhread_c.h
 new file mode 100644
-index 000000000..ca0626101
+index 0000000000..ca06261019
 --- /dev/null
 +++ b/src/thread/wiiu/SDL_systhread_c.h
 @@ -0,0 +1,27 @@
@@ -4856,7 +5355,7 @@ index 000000000..ca0626101
 \ No newline at end of file
 diff --git a/src/timer/wiiu/SDL_systimer.c b/src/timer/wiiu/SDL_systimer.c
 new file mode 100644
-index 000000000..13c5257f2
+index 0000000000..13c5257f2b
 --- /dev/null
 +++ b/src/timer/wiiu/SDL_systimer.c
 @@ -0,0 +1,86 @@
@@ -4947,10 +5446,10 @@ index 000000000..13c5257f2
 +/* vim: ts=4 sw=4
 + */
 diff --git a/src/video/SDL_sysvideo.h b/src/video/SDL_sysvideo.h
-index d7a42cc64..0d88ea5e6 100644
+index faf598be38..c7adbfbd74 100644
 --- a/src/video/SDL_sysvideo.h
 +++ b/src/video/SDL_sysvideo.h
-@@ -482,6 +482,7 @@ extern VideoBootStrap OFFSCREEN_bootstrap;
+@@ -484,6 +484,7 @@ extern VideoBootStrap OFFSCREEN_bootstrap;
  extern VideoBootStrap NGAGE_bootstrap;
  extern VideoBootStrap OS2DIVE_bootstrap;
  extern VideoBootStrap OS2VMAN_bootstrap;
@@ -4959,34 +5458,31 @@ index d7a42cc64..0d88ea5e6 100644
  /* Use SDL_OnVideoThread() sparingly, to avoid regressions in use cases that currently happen to work */
  extern SDL_bool SDL_OnVideoThread(void);
 diff --git a/src/video/SDL_video.c b/src/video/SDL_video.c
-index 8065a0b8c..929fd231a 100644
+index 2f6c631d12..d2dd39c285 100644
 --- a/src/video/SDL_video.c
 +++ b/src/video/SDL_video.c
-@@ -132,6 +132,12 @@ static VideoBootStrap *bootstrap[] = {
-     &OS2DIVE_bootstrap,
-     &OS2VMAN_bootstrap,
- #endif
-+#if SDL_VIDEO_DRIVER_WIIU
-+    &WIIU_bootstrap,
-+#endif
-+#if SDL_VIDEO_DRIVER_OFFSCREEN
-+    &OFFSCREEN_bootstrap,
-+#endif
- #if SDL_VIDEO_DRIVER_NGAGE
+@@ -142,6 +142,9 @@ static VideoBootStrap *bootstrap[] = {
+ #ifdef SDL_VIDEO_DRIVER_NGAGE
      &NGAGE_bootstrap,
  #endif
-@@ -1511,7 +1517,7 @@ static int SDL_UpdateFullscreenMode(SDL_Window *window, SDL_bool fullscreen)
++#ifdef SDL_VIDEO_DRIVER_WIIU
++    &WIIU_bootstrap,
++#endif
+ #ifdef SDL_VIDEO_DRIVER_OFFSCREEN
+     &OFFSCREEN_bootstrap,
+ #endif
+@@ -1578,7 +1581,7 @@ static int SDL_UpdateFullscreenMode(SDL_Window *window, SDL_bool fullscreen)
  }
  
  #define CREATE_FLAGS \
 -    (SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_ALWAYS_ON_TOP | SDL_WINDOW_SKIP_TASKBAR | SDL_WINDOW_POPUP_MENU | SDL_WINDOW_UTILITY | SDL_WINDOW_TOOLTIP | SDL_WINDOW_VULKAN | SDL_WINDOW_MINIMIZED | SDL_WINDOW_METAL)
-+    (SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_ALWAYS_ON_TOP | SDL_WINDOW_SKIP_TASKBAR | SDL_WINDOW_POPUP_MENU | SDL_WINDOW_UTILITY | SDL_WINDOW_TOOLTIP | SDL_WINDOW_VULKAN | SDL_WINDOW_MINIMIZED | SDL_WINDOW_METAL | SDL_WINDOW_WIIU_GAMEPAD_ONLY | SDL_WINDOW_WIIU_TV_ONLY)
++    (SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_ALWAYS_ON_TOP | SDL_WINDOW_SKIP_TASKBAR | SDL_WINDOW_POPUP_MENU | SDL_WINDOW_UTILITY | SDL_WINDOW_TOOLTIP | SDL_WINDOW_VULKAN | SDL_WINDOW_MINIMIZED | SDL_WINDOW_METAL | SDL_WINDOW_WIIU_GAMEPAD_ONLY | SDL_WINDOW_WIIU_TV_ONLY | SDL_WINDOW_WIIU_PREVENT_SWAP)
  
  static SDL_INLINE SDL_bool IsAcceptingDragAndDrop(void)
  {
 diff --git a/src/video/wiiu/SDL_wiiu_gfx_heap.c b/src/video/wiiu/SDL_wiiu_gfx_heap.c
 new file mode 100644
-index 000000000..5e77367c7
+index 0000000000..5e77367c79
 --- /dev/null
 +++ b/src/video/wiiu/SDL_wiiu_gfx_heap.c
 @@ -0,0 +1,203 @@
@@ -5195,7 +5691,7 @@ index 000000000..5e77367c7
 +#endif /* SDL_VIDEO_DRIVER_WIIU */
 diff --git a/src/video/wiiu/SDL_wiiu_gfx_heap.h b/src/video/wiiu/SDL_wiiu_gfx_heap.h
 new file mode 100644
-index 000000000..373913ada
+index 0000000000..373913adab
 --- /dev/null
 +++ b/src/video/wiiu/SDL_wiiu_gfx_heap.h
 @@ -0,0 +1,53 @@
@@ -5252,12 +5748,1103 @@ index 000000000..373913ada
 +#endif /* SDL_VIDEO_DRIVER_WIIU */
 +
 +#endif /* SDL_wiiu_gfx_heap_h */
+diff --git a/src/video/wiiu/SDL_wiiukeyboard.c b/src/video/wiiu/SDL_wiiukeyboard.c
+new file mode 100644
+index 0000000000..6eb6f21abe
+--- /dev/null
++++ b/src/video/wiiu/SDL_wiiukeyboard.c
+@@ -0,0 +1,137 @@
++/*
++  Simple DirectMedia Layer
++  Copyright (C) 1997-2023 Sam Lantinga <slouken@libsdl.org>
++
++  This software is provided 'as-is', without any express or implied
++  warranty.  In no event will the authors be held liable for any damages
++  arising from the use of this software.
++
++  Permission is granted to anyone to use this software for any purpose,
++  including commercial applications, and to alter it and redistribute it
++  freely, subject to the following restrictions:
++
++  1. The origin of this software must not be misrepresented; you must not
++	  claim that you wrote the original software. If you use this software
++	  in a product, an acknowledgment in the product documentation would be
++	  appreciated but is not required.
++  2. Altered source versions must be plainly marked as such, and must not be
++	  misrepresented as being the original software.
++  3. This notice may not be removed or altered from any source distribution.
++*/
++
++#include "SDL_wiiukeyboard.h"
++
++#include "SDL_wiiuswkbd.h"
++
++#include "../../SDL_internal.h"
++
++#include "../../events/SDL_keyboard_c.h"
++
++#include <nsyskbd/nsyskbd.h>
++
++#define EVENT_BUFFER_SIZE 10
++
++static struct WIIUKBD_EventBuffer {
++	KBDKeyEvent events[EVENT_BUFFER_SIZE];
++	int current;
++} event_buffer = {0};
++
++/* I'm not sure if this is really necessary, but I'm adding
++ * it anyway in case the wii u calls back from another thread */
++static SDL_mutex *event_buffer_mutex = NULL;
++
++static void SDL_WIIUKeyboard_AttachCallback(KBDAttachEvent *kde)
++{
++	(void)kde;
++}
++
++static void SDL_WIIUKeyboard_DetachCallback(KBDAttachEvent *kde)
++{
++	(void)kde;
++}
++
++static void SDL_WIIUKeyboard_KeyCallback(KBDKeyEvent *e)
++{
++	SDL_LockMutex(event_buffer_mutex);
++
++	/* add the key event to our buffer */
++	if (event_buffer.current < EVENT_BUFFER_SIZE)
++		event_buffer.events[event_buffer.current++] = *e;
++
++	SDL_UnlockMutex(event_buffer_mutex);
++}
++
++static void WIIU_SendKeyEventText(KBDKeyEvent *e)
++{
++	const Uint16 symbol = e->asUTF16Character;
++	unsigned char utf8[4] = {0};
++
++	/* ignore private symbols, used for special keys */
++	if ((symbol >= 0xE000 && symbol <= 0xF8FF) || symbol == 0xFFFF)
++		return;
++
++	/* convert UCS-2 to UTF-8 */
++	if (symbol < 0x80) {
++		utf8[0] = symbol;
++	} else if (symbol < 0x800) {
++		utf8[0] = 0xC0 | (symbol >> 6);
++		utf8[1] = 0x80 | (symbol & 0x3F);
++	} else {
++		utf8[0] = 0xE0 |  (symbol >> 12);
++		utf8[1] = 0x80 | ((symbol >> 6) & 0x3F);
++		utf8[2] = 0x80 |  (symbol & 0x3F);
++	}
++	
++	SDL_SendKeyboardText((char *)utf8);
++}
++
++void SDL_WIIU_PumpKeyboardEvents(_THIS)
++{
++	int i;
++
++	SDL_LockMutex(event_buffer_mutex);
++
++	/* only generate keyboard and text events if swkbd is not visible */
++	if (!WIIU_SWKBD_IsScreenKeyboardShown(NULL, NULL)) {
++		/* process each key event */
++		for (i = 0; i < event_buffer.current; i++) {
++			SDL_SendKeyboardKey(
++					event_buffer.events[i].isPressedDown ? SDL_PRESSED : SDL_RELEASED,
++					(SDL_Scancode)event_buffer.events[i].hidCode
++					);
++
++			if (event_buffer.events[i].isPressedDown)
++				WIIU_SendKeyEventText(&event_buffer.events[i]);
++		}
++	}
++	
++	/* reset the buffer */
++	event_buffer.current = 0;
++
++	SDL_UnlockMutex(event_buffer_mutex);
++}
++
++/* returns non-zero on success */
++int SDL_WIIU_InitKeyboard(_THIS)
++{
++	event_buffer_mutex = SDL_CreateMutex();
++	if (!event_buffer_mutex)
++		return 0;
++
++	if (KBDSetup(SDL_WIIUKeyboard_AttachCallback, SDL_WIIUKeyboard_DetachCallback, SDL_WIIUKeyboard_KeyCallback))
++		return 0;
++
++	return 1;
++}
++
++/* returns non-zero on success; this should ONLY be called after a successful keyboard init */
++int SDL_WIIU_QuitKeyboard(_THIS)
++{
++	if (KBDTeardown())
++		return 0;
++
++	/* by this point the mutex is definitely not locked */
++	SDL_DestroyMutex(event_buffer_mutex);
++
++	return 1;
++}
+diff --git a/src/video/wiiu/SDL_wiiukeyboard.h b/src/video/wiiu/SDL_wiiukeyboard.h
+new file mode 100644
+index 0000000000..6ff6014027
+--- /dev/null
++++ b/src/video/wiiu/SDL_wiiukeyboard.h
+@@ -0,0 +1,32 @@
++/*
++  Simple DirectMedia Layer
++  Copyright (C) 1997-2023 Sam Lantinga <slouken@libsdl.org>
++
++  This software is provided 'as-is', without any express or implied
++  warranty.  In no event will the authors be held liable for any damages
++  arising from the use of this software.
++
++  Permission is granted to anyone to use this software for any purpose,
++  including commercial applications, and to alter it and redistribute it
++  freely, subject to the following restrictions:
++
++  1. The origin of this software must not be misrepresented; you must not
++     claim that you wrote the original software. If you use this software
++     in a product, an acknowledgment in the product documentation would be
++     appreciated but is not required.
++  2. Altered source versions must be plainly marked as such, and must not be
++     misrepresented as being the original software.
++  3. This notice may not be removed or altered from any source distribution.
++*/
++
++#ifndef SDL_wiiukeyboard_h
++#define SDL_wiiukeyboard_h
++
++#include "../../SDL_internal.h"
++#include "../../events/SDL_events_c.h"
++
++void SDL_WIIU_PumpKeyboardEvents(_THIS);
++int SDL_WIIU_InitKeyboard(_THIS);
++int SDL_WIIU_QuitKeyboard(_THIS);
++
++#endif /* SDL_wiiukeyboard_h */
+\ No newline at end of file
+diff --git a/src/video/wiiu/SDL_wiiuswkbd.cpp b/src/video/wiiu/SDL_wiiuswkbd.cpp
+new file mode 100644
+index 0000000000..a887a90c30
+--- /dev/null
++++ b/src/video/wiiu/SDL_wiiuswkbd.cpp
+@@ -0,0 +1,842 @@
++/*
++  Simple DirectMedia Layer
++  Copyright (C) 2025 Daniel K. O. <dkosmari@gmail.com>
++
++  This software is provided 'as-is', without any express or implied
++  warranty.  In no event will the authors be held liable for any damages
++  arising from the use of this software.
++
++  Permission is granted to anyone to use this software for any purpose,
++  including commercial applications, and to alter it and redistribute it
++  freely, subject to the following restrictions:
++
++  1. The origin of this software must not be misrepresented; you must not
++  claim that you wrote the original software. If you use this software
++  in a product, an acknowledgment in the product documentation would be
++  appreciated but is not required.
++  2. Altered source versions must be plainly marked as such, and must not be
++  misrepresented as being the original software.
++  3. This notice may not be removed or altered from any source distribution.
++*/
++
++#include <array>
++#include <memory>
++#include <optional>
++#include <utility>
++
++#include "SDL_wiiuswkbd.h"
++
++#include <coreinit/filesystem.h>
++#include <coreinit/mcp.h>
++#include <coreinit/userconfig.h>
++#include <nn/swkbd.h>
++
++#include "SDL_log.h"
++#include "SDL_stdinc.h"
++#include "SDL_system.h"
++#include "SDL_syswm.h"
++
++#include "../../events/SDL_events_c.h"
++#include "../../events/SDL_keyboard_c.h"
++
++using nn::swkbd::LanguageType;
++using nn::swkbd::RegionType;
++using nn::swkbd::KeyboardLayout;
++
++namespace
++{
++
++    namespace detail
++    {
++        template <typename T>
++        struct SDL_Deleter
++        {
++            void
++            operator()(T *ptr)
++                const
++            {
++                if (ptr) {
++                    std::destroy_at(ptr);
++                    SDL_free(ptr);
++                }
++            }
++        };
++
++        template <typename T>
++        using unique_ptr = std::unique_ptr<T, SDL_Deleter<T>>;
++
++        template <typename T,
++                  typename... Args>
++        unique_ptr<T>
++        make_unique(Args &&...args)
++        {
++            T *ptr = reinterpret_cast<T *>(SDL_malloc(sizeof(T)));
++            if (!ptr)
++                return {};
++            std::construct_at(ptr, std::forward<Args>(args)...);
++            return unique_ptr<T>{ ptr };
++        }
++
++        // Note: we allow null pointers for these.
++        using raw_string = unique_ptr<char>;
++        using raw_u8string = unique_ptr<char8_t>;
++        using raw_u16string = unique_ptr<char16_t>;
++
++        bool
++        operator==(const raw_string &a,
++                   const char *b)
++        {
++            if (a.get() == b)
++                return true;
++            if (!a.get() || !b)
++                return false;
++            return SDL_strcmp(a.get(), b) == 0;
++        }
++
++        // RAII class to keep the FS module initialized.
++        struct FSLib
++        {
++            FSLib()
++
++            {
++                FSInit();
++            }
++
++            ~FSLib()
++
++            {
++                FSShutdown();
++            }
++        };
++        std::optional<FSLib> fsLib;
++
++        struct FSClientWrapper : FSClient
++        {
++            bool valid;
++
++            FSClientWrapper()
++            {
++                auto status = FSAddClient(this, FS_ERROR_FLAG_ALL);
++                valid = status == FS_STATUS_OK;
++            }
++
++            // disallow moving
++            FSClientWrapper(FSClientWrapper &&) = delete;
++
++            ~FSClientWrapper()
++
++            {
++                FSDelClient(this, FS_ERROR_FLAG_NONE);
++            }
++        };
++
++        namespace create
++        {
++            // We cannot call nn::swkbd functions unless a keyboard is created, so we keep
++            // track of it here.
++            bool created = false;
++
++            unique_ptr<FSClientWrapper> fsClient;
++            unique_ptr<char> workMemory;
++            std::optional<nn::swkbd::RegionType> region; // store region used to create keyboard
++
++            void
++            cleanup()
++            {
++                /*
++                 * Free all memory allocated for the swkbd creation.
++                 *
++                 * Normally we'd reuse the memory in case we need to re-create it in
++                 * another region. But if swkbd is manually disabled, we better actually
++                 * free up all memory.
++                 */
++                region.reset();
++                fsClient.reset();
++                workMemory.reset();
++            }
++
++        } // namespace create
++
++        namespace appear
++        {
++
++            nn::swkbd::AppearArg theArg;
++            // Keep track of wich window has the swkbd.
++            SDL_Window *window = nullptr;
++
++            // keyboard config options
++            nn::swkbd::KeyboardMode keyboardMode = nn::swkbd::KeyboardMode::Full;
++            raw_u16string okText;
++            bool showWordSuggestions = true;
++            // TODO: control disabled inputs, needs to fix nn::swkbd::ConfigArg
++            // input form options
++            raw_u16string initialText;
++            raw_u16string hintText;
++            nn::swkbd::PasswordMode passwordMode = nn::swkbd::PasswordMode::Clear;
++            bool highlightInitialText = false;
++            bool showCopyPasteButtons = false;
++            bool drawWiiPointer = true;
++
++            void
++            reset()
++            {
++                // Reset all customization after the keyboard is shown.
++                keyboardMode = nn::swkbd::KeyboardMode::Full;
++                okText.reset();
++                showWordSuggestions = true;
++                initialText.reset();
++                hintText.reset();
++                passwordMode = nn::swkbd::PasswordMode::Clear;
++                highlightInitialText = false;
++                showCopyPasteButtons = false;
++                drawWiiPointer = true;
++            }
++
++        } // namespace appear
++
++        raw_string swkbdLocale;
++
++        nn::swkbd::ControllerInfo controllerInfo;
++
++        VPADStatus vpad;
++        std::array<KPADStatus, 4> kpad;
++
++        SDL_SysWMmsg wmMsgStart;
++        SDL_SysWMmsg wmMsgFinish;
++
++        // return language, country pair
++        std::pair<raw_string, raw_string>
++        parse_locale(const raw_string &locale)
++        {
++            if (!locale)
++                return {};
++            raw_string language{ reinterpret_cast<char *>(SDL_calloc(3, 1)) };
++            raw_string country{ reinterpret_cast<char *>(SDL_calloc(3, 1)) };
++            int r = SDL_sscanf(locale.get(),
++                               "%2[Ca-z]_%2[A-Z]",
++                               language.get(),
++                               country.get());
++            if (r == 2)
++                return { std::move(language), std::move(country) };
++            if (r == 1)
++                return { std::move(language), {} };
++            return {};
++        }
++
++        std::optional<LanguageType>
++        to_language(const raw_string &language,
++                    const raw_string &country)
++        {
++            // two-letter codes, from ISO 639
++            if (language == "ja")
++                return LanguageType::Japanese;
++            if (language == "en")
++                return LanguageType::English;
++            if (language == "fr")
++                return LanguageType::French;
++            if (language == "de")
++                return LanguageType::German;
++            if (language == "it")
++                return LanguageType::Italian;
++            if (language == "es")
++                return LanguageType::Spanish;
++#if 0
++            // Chinese and Korean languages seem to crash the swkbd.
++            if (language == "zh") {
++                if (country == "TW")
++                    return LanguageType::TraditionalChinese;
++                if (country == "CN")
++                    return LanguageType::SimplifiedChinese;
++                return LanguageType::TraditionalChinese;
++            }
++            if (language == "ko")
++                return LanguageType::Korean;
++#endif
++            if (language == "nl")
++                return LanguageType::Dutch;
++            if (language == "pt")
++                return LanguageType::Portuguese;
++            if (language == "ru")
++                return LanguageType::Russian;
++            return {};
++        }
++
++        std::optional<RegionType>
++        to_region(const raw_string &language,
++                  const raw_string &country)
++        {
++            static const std::array usa_countries = {
++                "US",
++                "CA",
++                "MX",
++                "BR",
++            };
++            static const std::array eur_countries = {
++                "DE",
++                "ES",
++                "FR",
++                "GB",
++                "IT",
++                "NL",
++                "PT",
++                "RU",
++            };
++            static const std::array eur_languages = {
++                "de",
++                "es",
++                "fr",
++                "it",
++                "nl",
++                "pt",
++                "ru",
++            };
++
++            if (country == "JP")
++                return RegionType::Japan;
++
++            for (auto c : usa_countries)
++                if (country == c)
++                    return RegionType::USA;
++
++            for (auto c : eur_countries)
++                if (country == c)
++                    return RegionType::Europe;
++
++#if 0
++            // China, Korea and Taiwan seem to crash the swkbd.
++            if (country == "CN")
++                return RegionType::China;
++
++            if (country == "KR" || country == "KP")
++                return RegionType::Korea;
++
++            if (country == "TW")
++                return RegionType::Taiwan;
++#endif
++
++            // If country doesn't match, return a compatible region based on language alone
++            if (language == "ja")
++                return RegionType::Japan;
++            if (language == "en")
++                return RegionType::USA;
++            for (auto lang : eur_languages)
++                if (language == lang)
++                    return RegionType::Europe;
++#if 0
++            // China and Korea seem to crash the swkbd.
++            if (language == "zh")
++                return RegionType::China;
++            if (language == "ko")
++                return RegionType::Korea;
++#endif
++
++            return {};
++        }
++
++        Uint32
++        read_system_config_u32(const char *key)
++        {
++            UCHandle handle = UCOpen();
++            if (handle < 0) {
++                SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
++                             "UCOpen() returned: %d\n", handle);
++                return -1;
++            }
++            unsigned result;
++            alignas(0x40) UCSysConfig arg{};
++            SDL_strlcpy(arg.name, key, sizeof arg.name);
++            arg.dataType = UC_DATATYPE_UNSIGNED_INT;
++            arg.dataSize = sizeof result;
++            arg.data = &result;
++            auto status = UCReadSysConfig(handle, 1, &arg);
++            UCClose(handle);
++            if (status == UC_ERROR_OK)
++                return result;
++            else
++                return -1;
++        }
++
++        LanguageType
++        read_system_language()
++        {
++            auto lang = read_system_config_u32("cafe.language");
++            if (lang <= 11)
++                return static_cast<LanguageType>(lang);
++            return LanguageType::English;
++        }
++
++        std::optional<LanguageType> cached_system_language;
++
++        LanguageType
++        get_language_from_system()
++        {
++            if (!cached_system_language)
++                cached_system_language = read_system_language();
++            return *cached_system_language;
++        }
++
++        RegionType
++        read_system_region()
++        {
++            alignas(64) MCPSysProdSettings settings{};
++            MCPError status = 0;
++            int handle = MCP_Open();
++            if (handle < 0)
++                goto error;
++            status = MCP_GetSysProdSettings(handle, &settings);
++            MCP_Close(handle);
++            if (status)
++                goto error;
++
++            if (settings.product_area & MCP_REGION_JAPAN)
++                return RegionType::Japan;
++            if (settings.product_area & MCP_REGION_USA)
++                return RegionType::USA;
++            if (settings.product_area & MCP_REGION_EUROPE)
++                return RegionType::Europe;
++            if (settings.product_area & MCP_REGION_CHINA)
++                return RegionType::China;
++            if (settings.product_area & MCP_REGION_KOREA)
++                return RegionType::Korea;
++            if (settings.product_area & MCP_REGION_TAIWAN)
++                return RegionType::Taiwan;
++
++        error:
++            return RegionType::Europe;
++        }
++
++        std::optional<RegionType> cached_system_region;
++
++        RegionType
++        get_region_from_system()
++        {
++            if (!cached_system_region)
++                cached_system_region = read_system_region();
++            return *cached_system_region;
++        }
++
++        KeyboardLayout
++        get_default_layout(RegionType region,
++                           LanguageType language)
++        {
++            switch (region) {
++                case RegionType::Japan:
++                    return KeyboardLayout::JPN_JP_QWERTY;
++                case RegionType::USA:
++                    switch (language) {
++                        case LanguageType::English:
++                            return KeyboardLayout::USA_EN_QWERTY;
++                        case LanguageType::French:
++                            return KeyboardLayout::USA_FR_QWERTY;
++                        case LanguageType::Spanish:
++                            return KeyboardLayout::USA_ES_QWERTY;
++                        case LanguageType::Portuguese:
++                            return KeyboardLayout::USA_PT_QWERTY;
++                        default:
++                            return KeyboardLayout::LanguageDefault;
++                    }
++                case RegionType::Europe:
++                    switch (language) {
++                        case LanguageType::English:
++                            return KeyboardLayout::EUR_EN_QWERTY;
++                        case LanguageType::French:
++                            return KeyboardLayout::EUR_FR_AZERTY;
++                        case LanguageType::German:
++                            return KeyboardLayout::EUR_DE_QWERTZ;
++                        case LanguageType::Italian:
++                            return KeyboardLayout::EUR_IT_QWERTY;
++                        case LanguageType::Spanish:
++                            return KeyboardLayout::EUR_ES_QWERTY;
++                        case LanguageType::Dutch:
++                            return KeyboardLayout::EUR_NL_QWERTY;
++                        case LanguageType::Portuguese:
++                            return KeyboardLayout::EUR_PT_QWERTY;
++                        case LanguageType::Russian:
++                            return KeyboardLayout::EUR_RU_JCUKEN;
++                        default:
++                            return KeyboardLayout::LanguageDefault;
++                    }
++                default:
++                    return KeyboardLayout::LanguageDefault;
++            }
++        }
++
++        std::size_t
++        strlen_16(const char16_t *s)
++        {
++            if (!s)
++                return 0;
++            std::size_t result = 0;
++            while (*s++)
++                ++result;
++            return result;
++        }
++
++        raw_u8string
++        to_utf8(const char16_t *input)
++        {
++            if (!input)
++                return {};
++            auto output = SDL_iconv_string("UTF-8",
++                                           "UTF-16BE",
++                                           reinterpret_cast<const char *>(input),
++                                           2 * (strlen_16(input) + 1));
++            return raw_u8string{ reinterpret_cast<char8_t *>(output) };
++        }
++
++        raw_u16string
++        to_utf16(const char *input)
++        {
++            if (!input)
++                return {};
++            auto output = SDL_iconv_string("UTF-16BE",
++                                           "UTF-8",
++                                           input,
++                                           SDL_strlen(input) + 1);
++            return raw_u16string{ reinterpret_cast<char16_t *>(output) };
++        }
++
++    } // namespace detail
++} // namespace
++
++void WIIU_SWKBD_Initialize(void)
++{
++    if (detail::create::created)
++        return;
++
++    if (!detail::fsLib)
++        detail::fsLib.emplace();
++
++    nn::swkbd::CreateArg arg;
++
++    auto [language, country] = detail::parse_locale(detail::swkbdLocale);
++    if (auto region = detail::to_region(language, country))
++        arg.regionType = *region;
++    else
++        arg.regionType = detail::get_region_from_system();
++
++    auto local_fsClient = std::move(detail::create::fsClient);
++    if (!arg.fsClient) {
++        if (!local_fsClient)
++            local_fsClient = detail::make_unique<detail::FSClientWrapper>();
++        if (!local_fsClient) {
++            SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "Could not create FSClientfor nn::swkbd\n");
++            return;
++        }
++        arg.fsClient = local_fsClient.get();
++    } else {
++        // user provided their own fsClient, so destroy the internal one
++        local_fsClient.reset();
++    }
++
++    auto local_workMemory = std::move(detail::create::workMemory);
++    if (!arg.workMemory) {
++        local_workMemory.reset(reinterpret_cast<char *>(SDL_malloc(nn::swkbd::GetWorkMemorySize(0))));
++        if (!local_workMemory) {
++            SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "Could not allocate memory for nn::swkbd\n");
++            return;
++        }
++        arg.workMemory = local_workMemory.get();
++    } else {
++        // user provided their own workMemory, so destroy the internal one
++        local_workMemory.reset();
++    }
++
++    if (!nn::swkbd::Create(arg)) {
++        SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "nn::swkbd::Create() failed\n");
++        return;
++    }
++
++    detail::create::workMemory = std::move(local_workMemory);
++    detail::create::fsClient = std::move(local_fsClient);
++    detail::create::region = arg.regionType;
++    detail::create::created = true;
++}
++
++void WIIU_SWKBD_Finalize(void)
++{
++    if (!detail::create::created)
++        return;
++
++    nn::swkbd::Destroy();
++    detail::appear::window = nullptr;
++    detail::create::region.reset();
++    detail::create::created = false;
++}
++
++void WIIU_SWKBD_Calc(void)
++{
++    if (!detail::create::created)
++        return;
++
++    nn::swkbd::Calc(detail::controllerInfo);
++    detail::controllerInfo = {};
++
++    // TODO: these could go into a background thread
++    if (nn::swkbd::IsNeedCalcSubThreadFont())
++        nn::swkbd::CalcSubThreadFont();
++    if (nn::swkbd::IsNeedCalcSubThreadPredict())
++        nn::swkbd::CalcSubThreadPredict();
++
++    if (detail::appear::window) {
++        nn::swkbd::State state = nn::swkbd::GetStateInputForm();
++        if (state == nn::swkbd::State::Hidden)
++            detail::appear::window = nullptr;
++    }
++
++    // Check if user confirmed input.
++    if (nn::swkbd::IsDecideOkButton(nullptr)) {
++        // Send an event before we send out the string.
++        SDL_VERSION(&detail::wmMsgStart.version);
++        detail::wmMsgStart.subsystem = SDL_SYSWM_WIIU;
++        detail::wmMsgStart.msg.wiiu.event = SDL_WIIU_SYSWM_SWKBD_OK_START_EVENT;
++        SDL_SendSysWMEvent(&detail::wmMsgStart);
++
++        auto str16 = nn::swkbd::GetInputFormString();
++        if (str16) {
++            auto str8 = detail::to_utf8(str16);
++            if (str8)
++                SDL_SendKeyboardText(reinterpret_cast<const char *>(str8.get()));
++            else
++                SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "could not convert utf-16 to utf-8\n");
++        }
++
++        // Send an event after the string.
++        SDL_VERSION(&detail::wmMsgFinish.version);
++        detail::wmMsgFinish.subsystem = SDL_SYSWM_WIIU;
++        detail::wmMsgFinish.msg.wiiu.event = SDL_WIIU_SYSWM_SWKBD_OK_FINISH_EVENT;
++        SDL_SendSysWMEvent(&detail::wmMsgFinish);
++    }
++
++    if (nn::swkbd::IsDecideCancelButton(nullptr)) {
++        WIIU_SWKBD_HideScreenKeyboard(nullptr, nullptr);
++        SDL_VERSION(&detail::wmMsgFinish.version);
++        detail::wmMsgFinish.subsystem = SDL_SYSWM_WIIU;
++        detail::wmMsgFinish.msg.wiiu.event = SDL_WIIU_SYSWM_SWKBD_CANCEL_EVENT;
++        SDL_SendSysWMEvent(&detail::wmMsgFinish);
++    }
++}
++
++void WIIU_SWKBD_Draw(SDL_Window *window)
++{
++    if (window != detail::appear::window)
++        return;
++
++    nn::swkbd::State state = nn::swkbd::GetStateInputForm();
++    if (state == nn::swkbd::State::Hidden)
++        return;
++
++    if (window->flags & SDL_WINDOW_WIIU_TV_ONLY)
++        nn::swkbd::DrawTV();
++    else
++        nn::swkbd::DrawDRC();
++}
++
++SDL_bool WIIU_SWKBD_HasScreenKeyboardSupport(_THIS)
++{
++    return SDL_TRUE;
++}
++
++void WIIU_SWKBD_ShowScreenKeyboard(_THIS, SDL_Window *window)
++{
++    WIIU_SWKBD_Initialize();
++
++    if (!detail::appear::window)
++        detail::appear::window = window;
++
++    nn::swkbd::AppearArg &arg = detail::appear::theArg;
++    arg = nn::swkbd::AppearArg{}; // reset all values to default
++
++    // Set language
++    auto [language, country] = detail::parse_locale(detail::swkbdLocale);
++    if (auto lang = detail::to_language(language, country))
++        arg.keyboardArg.configArg.languageType = *lang;
++    else
++        arg.keyboardArg.configArg.languageType = detail::get_language_from_system();
++
++    // Choose a default layout, this seems necessary to activate the correct dictionary.
++    arg.keyboardArg.configArg.keyboardLayout =
++        detail::get_default_layout(detail::create::region.value_or(RegionType::Europe),
++                                   arg.keyboardArg.configArg.languageType);
++
++    // Set keyboard mode
++    arg.keyboardArg.configArg.keyboardMode = detail::appear::keyboardMode;
++
++    // Set OK text
++    if (detail::appear::okText)
++        arg.keyboardArg.configArg.okString = detail::appear::okText.get();
++
++    // Set word suggestions
++    arg.keyboardArg.configArg.showWordSuggestions = detail::appear::showWordSuggestions;
++
++    // Set show Wii pointer
++    arg.keyboardArg.configArg.drawSysWiiPointer = detail::appear::drawWiiPointer;
++
++    // Set initial text
++    if (detail::appear::initialText)
++        arg.inputFormArg.initialText = detail::appear::initialText.get();
++
++    // Set hint text
++    if (detail::appear::hintText)
++        arg.inputFormArg.hintText = detail::appear::hintText.get();
++
++    // Set password mode
++    arg.inputFormArg.passwordMode = detail::appear::passwordMode;
++
++    // Set highlight initial text
++    // Note the typo, must fix this after we fix WUT
++    arg.inputFormArg.higlightInitialText = detail::appear::highlightInitialText;
++
++    // Set show copy paste buttons
++    arg.inputFormArg.showCopyPasteButtons = detail::appear::showCopyPasteButtons;
++
++    if (window->flags & SDL_WINDOW_WIIU_TV_ONLY)
++        arg.keyboardArg.configArg.controllerType = nn::swkbd::ControllerType::WiiRemote0;
++    else
++        arg.keyboardArg.configArg.controllerType = nn::swkbd::ControllerType::DrcGamepad;
++
++    nn::swkbd::AppearInputForm(arg);
++    detail::appear::reset();
++}
++
++void WIIU_SWKBD_HideScreenKeyboard(_THIS, SDL_Window *)
++{
++    if (!detail::create::created)
++        return;
++    nn::swkbd::DisappearInputForm();
++    // detail::appear::window = nullptr;
++}
++
++SDL_bool WIIU_SWKBD_IsScreenKeyboardShown(_THIS, SDL_Window *window)
++{
++    if (!detail::create::created)
++        return SDL_FALSE;
++
++    if (window != detail::appear::window)
++        return SDL_FALSE;
++
++    nn::swkbd::State state = nn::swkbd::GetStateInputForm();
++    if (state != nn::swkbd::State::Hidden)
++        return SDL_TRUE;
++
++    return SDL_FALSE;
++}
++
++void SDL_WiiUSetSWKBDKeyboardMode(SDL_WiiUSWKBDKeyboardMode mode)
++{
++    switch (mode) {
++    case SDL_WIIU_SWKBD_KEYBOARD_MODE_FULL:
++        detail::appear::keyboardMode = nn::swkbd::KeyboardMode::Full;
++        break;
++    case SDL_WIIU_SWKBD_KEYBOARD_MODE_NUMPAD:
++        detail::appear::keyboardMode = nn::swkbd::KeyboardMode::Numpad;
++        break;
++    case SDL_WIIU_SWKBD_KEYBOARD_MODE_RESTRICTED:
++        detail::appear::keyboardMode = nn::swkbd::KeyboardMode::Utf8;
++        break;
++    case SDL_WIIU_SWKBD_KEYBOARD_MODE_NNID:
++        detail::appear::keyboardMode = nn::swkbd::KeyboardMode::NNID;
++        break;
++    default:
++        SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
++                     "set swkbd keyboard mode failed: invalid mode %d\n", mode);
++    }
++}
++
++void SDL_WiiUSetSWKBDOKLabel(const char *label)
++{
++    detail::appear::okText = detail::to_utf16(label);
++}
++
++void SDL_WiiUSetSWKBDShowWordSuggestions(SDL_bool show)
++{
++    detail::appear::showWordSuggestions = show;
++}
++
++void SDL_WiiUSetSWKBDInitialText(const char *text)
++{
++    detail::appear::initialText = detail::to_utf16(text);
++}
++
++void SDL_WiiUSetSWKBDHintText(const char *text)
++{
++    detail::appear::hintText = detail::to_utf16(text);
++}
++
++void SDL_WiiUSetSWKBDPasswordMode(SDL_WiiUSWKBDPasswordMode mode)
++{
++    switch (mode) {
++    case SDL_WIIU_SWKBD_PASSWORD_MODE_SHOW:
++        detail::appear::passwordMode = nn::swkbd::PasswordMode::Clear;
++        break;
++    case SDL_WIIU_SWKBD_PASSWORD_MODE_HIDE:
++        detail::appear::passwordMode = nn::swkbd::PasswordMode::Hide;
++        break;
++    case SDL_WIIU_SWKBD_PASSWORD_MODE_FADE:
++        detail::appear::passwordMode = nn::swkbd::PasswordMode::Fade;
++        break;
++    default:
++        SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
++                     "set swkbd password failed: invalid mode %d\n", mode);
++    }
++}
++
++void SDL_WiiUSetSWKBDHighlightInitialText(SDL_bool highlight)
++{
++    detail::appear::highlightInitialText = highlight;
++}
++
++void SDL_WiiUSetSWKBDShowCopyPasteButtons(SDL_bool show)
++{
++    detail::appear::showCopyPasteButtons = show;
++}
++
++void SDL_WiiUSetSWKBDDrawWiiPointer(SDL_bool draw)
++{
++    detail::appear::drawWiiPointer = draw;
++}
++
++void SDL_WiiUSetSWKBDLocale(const char *locale)
++{
++    // Don't do anything if the locale didn't change.
++    if (detail::swkbdLocale == locale)
++        return;
++    WIIU_SWKBD_Finalize();
++    if (locale)
++        detail::swkbdLocale.reset(SDL_strdup(locale));
++    else
++        detail::swkbdLocale.reset();
++}
++
++SDL_bool SDL_WiiUSetSWKBDVPAD(const void *vpad)
++{
++    if (!detail::create::created)
++        return SDL_FALSE;
++
++    nn::swkbd::State state = nn::swkbd::GetStateInputForm();
++    if (state != nn::swkbd::State::Visible)
++        return SDL_FALSE;
++
++    // printf("swkbd is consuming vpad input, window=%p\n", detail::appear::window);
++    detail::vpad = *reinterpret_cast<const VPADStatus *>(vpad);
++    detail::controllerInfo.vpad = &detail::vpad;
++    return SDL_TRUE;
++}
++
++SDL_bool SDL_WiiUSetSWKBDKPAD(int channel, const void *kpad)
++{
++    if (!detail::create::created)
++        return SDL_FALSE;
++
++    if (channel < 0 || channel > 3)
++        return SDL_FALSE;
++
++    nn::swkbd::State state = nn::swkbd::GetStateInputForm();
++    if (state != nn::swkbd::State::Visible)
++        return SDL_FALSE;
++
++    // printf("swkbd is consuming kpad input\n");
++    detail::kpad[channel] = *reinterpret_cast<const KPADStatus *>(kpad);
++    detail::controllerInfo.kpad[channel] = &detail::kpad[channel];
++    return SDL_TRUE;
++}
+diff --git a/src/video/wiiu/SDL_wiiuswkbd.h b/src/video/wiiu/SDL_wiiuswkbd.h
+new file mode 100644
+index 0000000000..31ff92e195
+--- /dev/null
++++ b/src/video/wiiu/SDL_wiiuswkbd.h
+@@ -0,0 +1,55 @@
++/*
++  Simple DirectMedia Layer
++  Copyright (C) 2025 Daniel K. O. <dkosmari@gmail.com>
++
++  This software is provided 'as-is', without any express or implied
++  warranty.  In no event will the authors be held liable for any damages
++  arising from the use of this software.
++
++  Permission is granted to anyone to use this software for any purpose,
++  including commercial applications, and to alter it and redistribute it
++  freely, subject to the following restrictions:
++
++  1. The origin of this software must not be misrepresented; you must not
++     claim that you wrote the original software. If you use this software
++     in a product, an acknowledgment in the product documentation would be
++     appreciated but is not required.
++  2. Altered source versions must be plainly marked as such, and must not be
++     misrepresented as being the original software.
++  3. This notice may not be removed or altered from any source distribution.
++*/
++
++#ifndef SDL_wiiuswkbd_h
++#define SDL_wiiuswkbd_h
++
++#include "../../SDL_internal.h"
++#include "../SDL_sysvideo.h"
++
++#include <padscore/kpad.h>
++#include <vpad/input.h>
++
++#if SDL_VIDEO_DRIVER_WIIU
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++void WIIU_SWKBD_Initialize(void);
++void WIIU_SWKBD_Finalize(void);
++
++void WIIU_SWKBD_Calc(void);
++
++void WIIU_SWKBD_Draw(SDL_Window *window);
++
++SDL_bool WIIU_SWKBD_HasScreenKeyboardSupport(_THIS);
++void WIIU_SWKBD_ShowScreenKeyboard(_THIS, SDL_Window *window);
++void WIIU_SWKBD_HideScreenKeyboard(_THIS, SDL_Window *window);
++SDL_bool WIIU_SWKBD_IsScreenKeyboardShown(_THIS, SDL_Window *window);
++
++#ifdef __cplusplus
++} /* extern "C" */
++#endif
++
++#endif /* SDL_VIDEO_DRIVER_WIIU */
++
++#endif /* SDL_wiiu_swkbd_h */
 diff --git a/src/video/wiiu/SDL_wiiuvideo.c b/src/video/wiiu/SDL_wiiuvideo.c
 new file mode 100644
-index 000000000..f42f206aa
+index 0000000000..d8c3bfaa5c
 --- /dev/null
 +++ b/src/video/wiiu/SDL_wiiuvideo.c
-@@ -0,0 +1,387 @@
+@@ -0,0 +1,474 @@
 +/*
 +  Simple DirectMedia Layer
 +  Copyright (C) 2018-2018 Ash Logan <ash@heyquark.com>
@@ -5296,7 +6883,9 @@ index 000000000..f42f206aa
 +#include "../../events/SDL_keyboard_c.h"
 +#include "../../events/SDL_events_c.h"
 +#include "SDL_wiiuvideo.h"
++#include "SDL_wiiukeyboard.h"
 +#include "SDL_wiiu_gfx_heap.h"
++#include "SDL_wiiuswkbd.h"
 +
 +#include "../../render/wiiu/SDL_render_wiiu.h"
 +
@@ -5307,6 +6896,7 @@ index 000000000..f42f206aa
 +
 +#include <coreinit/foreground.h>
 +#include <proc_ui/procui.h>
++#include <sysapp/launch.h>
 +
 +#include <gx2/context.h>
 +#include <gx2/display.h>
@@ -5315,6 +6905,7 @@ index 000000000..f42f206aa
 +#include <gx2/state.h>
 +#include <gx2r/mem.h>
 +#include <gx2r/surface.h>
++#include <gx2/swap.h>
 +
 +#define DRC_SCREEN_WIDTH    854
 +#define DRC_SCREEN_HEIGHT   480
@@ -5359,6 +6950,15 @@ index 000000000..f42f206aa
 +
 +	GX2Invalidate(GX2_INVALIDATE_MODE_CPU, videodata->drcScanBuffer, videodata->drcScanBufferSize);
 +	GX2SetDRCBuffer(videodata->drcScanBuffer, videodata->drcScanBufferSize, videodata->drcRenderMode, GX2_SURFACE_FORMAT_UNORM_R8_G8_B8_A8, GX2_BUFFERING_MODE_DOUBLE);
++
++	if (videodata->handleProcUI) {
++		SDL_SendAppEvent(SDL_APP_WILLENTERFOREGROUND);
++		SDL_SendAppEvent(SDL_APP_DIDENTERFOREGROUND);
++	}
++
++	if (GX2GetSwapInterval() == 0) {
++		GX2SetSwapInterval(0); /* Workaround for leaving foreground with a swap interval 0 */
++	}
 +
 +	while (window) {
 +		SDL_Renderer* renderer = SDL_GetRenderer(window);
@@ -5405,8 +7005,14 @@ index 000000000..f42f206aa
 +	while (window) {
 +		SDL_Renderer* renderer = SDL_GetRenderer(window);
 +
-+		// No longer in foreground, window is no longer visible
-+		SDL_SendWindowEvent(window, SDL_WINDOWEVENT_HIDDEN, 0, 0);
++		// Avoid sending the event if we're handling ProcUI, since we send this
++		// event from inside WIIU_PumpEvents().
++		// Note: the application won't receive this event until after we return to
++		// the foreground.
++		if (!videodata->handleProcUI) {
++			// No longer in foreground, window is no longer visible.
++			SDL_SendWindowEvent(window, SDL_WINDOWEVENT_HIDDEN, 0, 0);
++		}
 +
 +		// Destroy window texture, we no longer have access to foreground memory
 +		if (renderer) {
@@ -5446,7 +7052,7 @@ index 000000000..f42f206aa
 +	// check if the user already set up procui or if we should handle it
 +	if (!ProcUIIsRunning()) {
 +		ProcUIInitEx(WiiU_SaveCallback, NULL);
-+		
++
 +		videodata->handleProcUI = SDL_TRUE;
 +	}
 +
@@ -5529,12 +7135,37 @@ index 000000000..f42f206aa
 +	mode.refresh_rate = 60;
 +	SDL_AddBasicVideoDisplay(&mode);
 +
++	videodata->kbd_init = SDL_WIIU_InitKeyboard(_this);
++
 +	return 0;
 +}
 +
 +static void WIIU_VideoQuit(_THIS)
 +{
 +	WIIU_VideoData *videodata = (WIIU_VideoData *) _this->driverdata;
++
++	WIIU_SWKBD_Finalize();
++
++	if (videodata->handleProcUI) {
++		// Put ProcUI into EXIT state if user stopped processing events
++		// before SDL_QUIT was generated.
++		if (ProcUIIsRunning() && !videodata->exitingProcUI) {
++			SDL_bool procui_running = SDL_TRUE;
++			SYSLaunchMenu();
++			while (procui_running) {
++				switch (ProcUIProcessMessages(TRUE)) {
++				case PROCUI_STATUS_RELEASE_FOREGROUND:
++					ProcUIDrawDoneRelease();
++					break;
++				case PROCUI_STATUS_EXITING:
++					procui_running = SDL_FALSE;
++					break;
++				default:
++					;
++				}
++			}
++		}
++	}
 +
 +	// if we're in foreground, destroy foreground data
 +	if (videodata->hasForeground) {
@@ -5552,6 +7183,9 @@ index 000000000..f42f206aa
 +	if (videodata->handleProcUI) {
 +		ProcUIShutdown();
 +	}
++
++	if (videodata->kbd_init)
++		SDL_WIIU_QuitKeyboard(_this);
 +
 +	running = SDL_FALSE;
 +}
@@ -5588,19 +7222,54 @@ index 000000000..f42f206aa
 +	WIIU_VideoData *videodata = (WIIU_VideoData *) _this->driverdata;
 +
 +	if (videodata->handleProcUI) {
-+		ProcUIStatus status = ProcUIProcessMessages(TRUE);
-+		if (status == PROCUI_STATUS_EXITING) {
-+			SDL_SendQuit();
-+		} else if (status == PROCUI_STATUS_RELEASE_FOREGROUND) {
++		if (videodata->enteringBackground) {
++			// The previous ProcUIProcessMessages() received a
++			// PROCUI_STATUS_RELEASE_FOREGROUND.
++			videodata->enteringBackground = SDL_FALSE;
 +			ProcUIDrawDoneRelease();
 +		}
++
++		if (ProcUIIsRunning() && !videodata->exitingProcUI) {
++			ProcUIStatus status = ProcUIProcessMessages(TRUE);
++			switch (status) {
++			case PROCUI_STATUS_IN_FOREGROUND:
++				videodata->enteringBackground = SDL_FALSE;
++				break;
++			case PROCUI_STATUS_IN_BACKGROUND:
++				break;
++			case PROCUI_STATUS_RELEASE_FOREGROUND: {
++				SDL_Window *window = _this->windows;
++				while (window) {
++					// No longer in foreground, window is no longer
++					// visible.
++					SDL_SendWindowEvent(window, SDL_WINDOWEVENT_HIDDEN, 0, 0);
++					window = window->next;
++				}
++				SDL_SendAppEvent(SDL_APP_WILLENTERBACKGROUND);
++				SDL_SendAppEvent(SDL_APP_DIDENTERBACKGROUND);
++				// Note: we don't call ProcUIDrawDoneRelease() here to give
++				// the application a chance to receive and process the
++				// events queued above. The next call to WIIU_PumpEvents()
++				// is the one that actually enters the background.
++				videodata->enteringBackground = SDL_TRUE;
++				break;
++			}
++			case PROCUI_STATUS_EXITING:
++				videodata->exitingProcUI = SDL_TRUE;
++				SDL_SendQuit();
++				break;
++			}
++		}
 +	}
++
++	SDL_WIIU_PumpKeyboardEvents(_this);
++	WIIU_SWKBD_Calc();
 +}
 +
-+static void WIIU_DeleteDevice(SDL_VideoDevice *device)
++static void WIIU_DeleteDevice(_THIS)
 +{
-+	SDL_free(device->driverdata);
-+	SDL_free(device);
++	SDL_free(_this->driverdata);
++	SDL_free(_this);
 +}
 +
 +static SDL_VideoDevice *WIIU_CreateDevice(void)
@@ -5634,6 +7303,11 @@ index 000000000..f42f206aa
 +	device->SetDisplayMode = WIIU_SetDisplayMode;
 +	device->PumpEvents = WIIU_PumpEvents;
 +
++	device->HasScreenKeyboardSupport = WIIU_SWKBD_HasScreenKeyboardSupport;
++	device->ShowScreenKeyboard	 = WIIU_SWKBD_ShowScreenKeyboard;
++	device->HideScreenKeyboard	 = WIIU_SWKBD_HideScreenKeyboard;
++	device->IsScreenKeyboardShown	 = WIIU_SWKBD_IsScreenKeyboardShown;
++
 +	device->free = WIIU_DeleteDevice;
 +
 +	return device;
@@ -5647,10 +7321,10 @@ index 000000000..f42f206aa
 +#endif /* SDL_VIDEO_DRIVER_WIIU */
 diff --git a/src/video/wiiu/SDL_wiiuvideo.h b/src/video/wiiu/SDL_wiiuvideo.h
 new file mode 100644
-index 000000000..a635012d9
+index 0000000000..4de6511839
 --- /dev/null
 +++ b/src/video/wiiu/SDL_wiiuvideo.h
-@@ -0,0 +1,57 @@
+@@ -0,0 +1,63 @@
 +/*
 +  Simple DirectMedia Layer
 +  Copyright (C) 2018-2018 Ash Logan <ash@heyquark.com>
@@ -5691,6 +7365,9 @@ index 000000000..a635012d9
 +	SDL_bool handleProcUI;
 +
 +	SDL_bool hasForeground;
++	SDL_bool enteringBackground;
++	// indicate if ProcUI received PROCUI_STATUS_EXITING
++	SDL_bool exitingProcUI;
 +
 +	void *commandBufferPool;
 +
@@ -5703,6 +7380,9 @@ index 000000000..a635012d9
 +	GX2DrcRenderMode drcRenderMode;
 +	void *drcScanBuffer;
 +	uint32_t drcScanBufferSize;
++
++	// did the keyboard code initialize properly?
++	int kbd_init;
 +};
 +
 +#endif /* SDL_VIDEO_DRIVER_WIIU */
