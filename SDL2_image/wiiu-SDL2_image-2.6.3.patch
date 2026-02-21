@@ -1,0 +1,29 @@
+diff -r 663db63766c2 Makefile.am
+--- a/Makefile.am	Mon Feb 06 16:38:32 2023 -0800
++++ b/Makefile.am	Thu Nov 27 00:11:54 2025 -0300
+@@ -66,8 +66,9 @@
+ libSDL2_image_la_LDFLAGS = 	\
+ 	-no-undefined		\
+ 	-release $(LT_RELEASE)	\
+-	-version-info $(LT_CURRENT):$(LT_REVISION):$(LT_AGE) $(LT_EXTRA)
+-libSDL2_image_la_LIBADD = $(IMG_LIBS)
++	-version-info $(LT_CURRENT):$(LT_REVISION):$(LT_AGE) $(LT_EXTRA) \
++	$(IMG_LIBS)
++
+ if USE_VERSION_RC
+ libSDL2_image_la_DEPENDENCIES = version.o
+ endif
+diff -r 663db63766c2 configure.ac
+--- a/configure.ac	Mon Feb 06 16:38:32 2023 -0800
++++ b/configure.ac	Thu Nov 27 00:11:54 2025 -0300
+@@ -123,8 +123,8 @@
+ dnl Function to find a library in the compiler search path
+ find_lib()
+ {
+-    gcc_bin_path=[`$CC -print-search-dirs 2>/dev/null | fgrep programs: | sed 's/[^=]*=\(.*\)/\1/' | sed 's/:/ /g'`]
+-    gcc_lib_path=[`$CC -print-search-dirs 2>/dev/null | fgrep libraries: | sed 's/[^=]*=\(.*\)/\1/' | sed 's/:/ /g'`]
++    gcc_bin_path=[`$CC -print-search-dirs 2>/dev/null | grep -F programs: | sed 's/[^=]*=\(.*\)/\1/' | sed 's/:/ /g'`]
++    gcc_lib_path=[`$CC -print-search-dirs 2>/dev/null | grep -F libraries: | sed 's/[^=]*=\(.*\)/\1/' | sed 's/:/ /g'`]
+     env_lib_path=[`echo $LIBS $LDFLAGS $* | sed 's/-L[ ]*//g'`]
+     if test "$cross_compiling" = yes; then
+         host_lib_path=""
