@@ -1444,7 +1444,7 @@ index bbad086763..b9ed7153ae 100644
  
  /* vi: set ts=4 sw=4 expandtab: */
 diff --git a/src/joystick/SDL_gamecontrollerdb.h b/src/joystick/SDL_gamecontrollerdb.h
-index 1366fb25d7..c551e2a24d 100644
+index 1366fb25d7..34856a2992 100644
 --- a/src/joystick/SDL_gamecontrollerdb.h
 +++ b/src/joystick/SDL_gamecontrollerdb.h
 @@ -999,6 +999,16 @@ static const char *s_ControllerMappings[] = {
@@ -1453,14 +1453,14 @@ index 1366fb25d7..c551e2a24d 100644
      "000000004e696e74656e646f20334400,Nintendo 3DS,crc:3210,a:b0,b:b1,back:b2,dpdown:b7,dpleft:b5,dpright:b4,dpup:b6,leftshoulder:b9,lefttrigger:b14,leftx:a0,lefty:a1,rightshoulder:b8,righttrigger:b15,rightx:a2,righty:a3,start:b3,x:b10,y:b11,",
 +#endif
 +#if defined(SDL_JOYSTICK_WIIU)
-+    "0000000057696920552047616d657000,Wii U Gamepad,crc:e2e7,a:b0,b:b1,back:b11,dpdown:b15,dpleft:b12,dpright:b14,dpup:b13,leftshoulder:b6,leftstick:b4,lefttrigger:b8,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b5,righttrigger:b9,rightx:a2,righty:a3,start:b10,x:b2,y:b3,hint:SDL_GAMECONTROLLER_USE_BUTTON_LABELS:=1,",
-+    "0000000057696920552047616d657000,Wii U Gamepad,crc:e2e7,a:b1,b:b0,back:b11,dpdown:b15,dpleft:b12,dpright:b14,dpup:b13,leftshoulder:b6,leftstick:b4,lefttrigger:b8,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b5,righttrigger:b9,rightx:a2,righty:a3,start:b10,x:b3,y:b2,hint:!SDL_GAMECONTROLLER_USE_BUTTON_LABELS:=1,",
-+    "0000000057696920552050726f204300,Wii U Pro Controller,crc:e45c,a:b0,b:b1,back:b11,dpdown:b15,dpleft:b12,dpright:b14,dpup:b13,leftshoulder:b6,leftstick:b4,lefttrigger:b8,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b5,righttrigger:b9,rightx:a2,righty:a3,start:b10,x:b2,y:b3,hint:SDL_GAMECONTROLLER_USE_BUTTON_LABELS:=1,",
-+    "0000000057696920552050726f204300,Wii U Pro Controller,crc:e45c,a:b1,b:b0,back:b11,dpdown:b15,dpleft:b12,dpright:b14,dpup:b13,leftshoulder:b6,leftstick:b4,lefttrigger:b8,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b5,righttrigger:b9,rightx:a2,righty:a3,start:b10,x:b3,y:b2,hint:!SDL_GAMECONTROLLER_USE_BUTTON_LABELS:=1,",
-+    "0000000057696920436c617373696300,Wii Classic Controller,crc:5ef0,a:b0,b:b1,back:b11,dpdown:b15,dpleft:b12,dpright:b14,dpup:b13,leftshoulder:b6,leftstick:b4,lefttrigger:b8,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b5,righttrigger:b9,rightx:a2,righty:a3,start:b10,x:b2,y:b3,hint:SDL_GAMECONTROLLER_USE_BUTTON_LABELS:=1,",
-+    "0000000057696920436c617373696300,Wii Classic Controller,crc:5ef0,a:b1,b:b0,back:b11,dpdown:b15,dpleft:b12,dpright:b14,dpup:b13,leftshoulder:b6,leftstick:b4,lefttrigger:b8,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b5,righttrigger:b9,rightx:a2,righty:a3,start:b10,x:b3,y:b2,hint:!SDL_GAMECONTROLLER_USE_BUTTON_LABELS:=1,",
-+    "00000000576969204e756e6368756b00,Wii Remote + Nunchuk,crc:bce1,a:b0,b:b1,back:b11,dpdown:b15,dpleft:b12,dpright:b14,dpup:b13,leftshoulder:b6,leftstick:b4,lefttrigger:b8,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b5,righttrigger:b9,rightx:a2,righty:a3,start:b10,x:b2,y:b3,",
-+    "000000005769692052656d6f74650000,Wii Remote,crc:1d69,a:b7,b:b6,back:b11,dpdown:b12,dpleft:b13,dpright:b15,dpup:b14,start:b10,x:b1,y:b0,",
++    "0000000057696920552047616d657000,Wii U Gamepad,crc:e7e2,a:b0,b:b1,back:b11,dpdown:b15,dpleft:b12,dpright:b14,dpup:b13,leftshoulder:b6,leftstick:b4,lefttrigger:b8,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b5,righttrigger:b9,rightx:a2,righty:a3,start:b10,x:b2,y:b3,hint:SDL_GAMECONTROLLER_USE_BUTTON_LABELS:=1,",
++    "0000000057696920552047616d657000,Wii U Gamepad,crc:e7e2,a:b1,b:b0,back:b11,dpdown:b15,dpleft:b12,dpright:b14,dpup:b13,leftshoulder:b6,leftstick:b4,lefttrigger:b8,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b5,righttrigger:b9,rightx:a2,righty:a3,start:b10,x:b3,y:b2,hint:!SDL_GAMECONTROLLER_USE_BUTTON_LABELS:=1,",
++    "0000000057696920552050726f204300,Wii U Pro Controller,crc:5ce4,a:b0,b:b1,back:b11,dpdown:b15,dpleft:b12,dpright:b14,dpup:b13,leftshoulder:b6,leftstick:b4,lefttrigger:b8,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b5,righttrigger:b9,rightx:a2,righty:a3,start:b10,x:b2,y:b3,hint:SDL_GAMECONTROLLER_USE_BUTTON_LABELS:=1,",
++    "0000000057696920552050726f204300,Wii U Pro Controller,crc:5ce4,a:b1,b:b0,back:b11,dpdown:b15,dpleft:b12,dpright:b14,dpup:b13,leftshoulder:b6,leftstick:b4,lefttrigger:b8,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b5,righttrigger:b9,rightx:a2,righty:a3,start:b10,x:b3,y:b2,hint:!SDL_GAMECONTROLLER_USE_BUTTON_LABELS:=1,",
++    "0000000057696920436c617373696300,Wii Classic Controller,crc:f05e,a:b0,b:b1,back:b11,dpdown:b15,dpleft:b12,dpright:b14,dpup:b13,leftshoulder:b6,leftstick:b4,lefttrigger:b8,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b5,righttrigger:b9,rightx:a2,righty:a3,start:b10,x:b2,y:b3,hint:SDL_GAMECONTROLLER_USE_BUTTON_LABELS:=1,",
++    "0000000057696920436c617373696300,Wii Classic Controller,crc:f05e,a:b1,b:b0,back:b11,dpdown:b15,dpleft:b12,dpright:b14,dpup:b13,leftshoulder:b6,leftstick:b4,lefttrigger:b8,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b5,righttrigger:b9,rightx:a2,righty:a3,start:b10,x:b3,y:b2,hint:!SDL_GAMECONTROLLER_USE_BUTTON_LABELS:=1,",
++    "00000000576969204e756e6368756b00,Wii Remote + Nunchuk,crc:e1bc,a:b0,b:b1,back:b11,dpdown:b15,dpleft:b12,dpright:b14,dpup:b13,leftshoulder:b6,leftstick:b4,lefttrigger:b8,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b5,righttrigger:b9,rightx:a2,righty:a3,start:b10,x:b2,y:b3,",
++    "000000005769692052656d6f74650000,Wii Remote,crc:691d,a:b7,b:b6,back:b11,dpdown:b12,dpleft:b13,dpright:b15,dpup:b14,start:b10,x:b1,y:b0,",
  #endif
      "hidapi,*,a:b0,b:b1,back:b4,dpdown:b12,dpleft:b13,dpright:b14,dpup:b11,guide:b5,leftshoulder:b9,leftstick:b7,lefttrigger:a4,leftx:a0,lefty:a1,rightshoulder:b10,rightstick:b8,righttrigger:a5,rightx:a2,righty:a3,start:b6,x:b2,y:b3,",
      NULL
@@ -5750,7 +5750,7 @@ index 0000000000..373913adab
 +#endif /* SDL_wiiu_gfx_heap_h */
 diff --git a/src/video/wiiu/SDL_wiiukeyboard.c b/src/video/wiiu/SDL_wiiukeyboard.c
 new file mode 100644
-index 0000000000..6eb6f21abe
+index 0000000000..117679d378
 --- /dev/null
 +++ b/src/video/wiiu/SDL_wiiukeyboard.c
 @@ -0,0 +1,137 @@
@@ -5837,7 +5837,7 @@ index 0000000000..6eb6f21abe
 +		utf8[1] = 0x80 | ((symbol >> 6) & 0x3F);
 +		utf8[2] = 0x80 |  (symbol & 0x3F);
 +	}
-+	
++
 +	SDL_SendKeyboardText((char *)utf8);
 +}
 +
@@ -5848,7 +5848,7 @@ index 0000000000..6eb6f21abe
 +	SDL_LockMutex(event_buffer_mutex);
 +
 +	/* only generate keyboard and text events if swkbd is not visible */
-+	if (!WIIU_SWKBD_IsScreenKeyboardShown(NULL, NULL)) {
++	if (!WIIU_SWKBD_IsScreenKeyboardShown(_this, NULL)) {
 +		/* process each key event */
 +		for (i = 0; i < event_buffer.current; i++) {
 +			SDL_SendKeyboardKey(
@@ -5860,7 +5860,7 @@ index 0000000000..6eb6f21abe
 +				WIIU_SendKeyEventText(&event_buffer.events[i]);
 +		}
 +	}
-+	
++
 +	/* reset the buffer */
 +	event_buffer.current = 0;
 +
@@ -5932,10 +5932,10 @@ index 0000000000..6ff6014027
 \ No newline at end of file
 diff --git a/src/video/wiiu/SDL_wiiuswkbd.cpp b/src/video/wiiu/SDL_wiiuswkbd.cpp
 new file mode 100644
-index 0000000000..a887a90c30
+index 0000000000..4550255749
 --- /dev/null
 +++ b/src/video/wiiu/SDL_wiiuswkbd.cpp
-@@ -0,0 +1,842 @@
+@@ -0,0 +1,843 @@
 +/*
 +  Simple DirectMedia Layer
 +  Copyright (C) 2025 Daniel K. O. <dkosmari@gmail.com>
@@ -6650,7 +6650,8 @@ index 0000000000..a887a90c30
 +    if (!detail::create::created)
 +        return SDL_FALSE;
 +
-+    if (window != detail::appear::window)
++    // Only match for the correct window when window is not null.
++    if (window && window != detail::appear::window)
 +        return SDL_FALSE;
 +
 +    nn::swkbd::State state = nn::swkbd::GetStateInputForm();
