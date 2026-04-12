@@ -1,0 +1,3827 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -233,6 +233,7 @@
+     src/codecs/music_wav.c
+     src/codecs/music_wavpack.c
+     src/codecs/music_xmp.c
++    src/codecs/remap_channels.c
+     src/effect_position.c
+     src/effect_stereoreverse.c
+     src/effects_internal.c
+@@ -472,7 +473,7 @@
+         message(STATUS "Using system tremor")
+         find_package(tremor REQUIRED)
+         if(NOT SDL2MIXER_VORBIS_TREMOR_SHARED)
+-            list(APPEND PC_REQUIRES tremor)
++            list(APPEND PC_REQUIRES vorbisidec)
+         endif()
+     endif()
+     if(SDL2MIXER_VORBIS_TREMOR_SHARED)
+@@ -591,16 +592,24 @@
+ if(SDL2MIXER_GME)
+     target_compile_definitions(SDL2_mixer PRIVATE MUSIC_GME)
+     if(SDL2MIXER_VENDORED)
+-        set(BUILD_SHARED_LIBS "${SDL2MIXER_GME_SHARED}")
+-        set(ENABLE_UBSAN OFF)
+-        set(BUILD_FRAMEWORK OFF)
++        set(GME_BUILD_SHARED "${SDL2MIXER_GME_SHARED}")
++        if(SDL2MIXER_GME_SHARED)
++            set(GME_BUILD_STATIC OFF)
++            set(tgt_gme gme_shared)
++        else()
++            set(GME_BUILD_STATIC ON)
++            set(tgt_gme gme_static)
++        endif()
++        set(GME_BUILD_FRAMEWORK OFF)
++        set(GME_BUILD_TESTING OFF)
++        set(GME_BUILD_EXAMPLES OFF)
++        set(GME_ENABLE_UBSAN OFF)
+         option(GME_ZLIB "Enable GME to support compressed sound formats" OFF)
+         message(STATUS "Using vendored libgme")
+         sdl_check_project_in_subfolder(external/libgme libgme SDL2MIXER_VENDORED)
+         add_subdirectory(external/libgme EXCLUDE_FROM_ALL)
+-        add_library(gme::gme ALIAS gme)
+         if(SDL2MIXER_GME_SHARED)
+-            list(APPEND INSTALL_EXTRA_TARGETS gme)
++            list(APPEND INSTALL_EXTRA_TARGETS ${tgt_gme})
+         endif()
+         if(NOT SDL2MIXER_GME_SHARED)
+             list(APPEND PC_LIBS -l$<TARGET_FILE_BASE_NAME:gme>)
+diff --git a/Makefile.os2 b/Makefile.os2
+--- a/Makefile.os2
++++ b/Makefile.os2
+@@ -59,6 +59,7 @@
+ # codec sources:
+ SRCS+= load_aiff.c load_voc.c music_wav.c &
+        music_ogg.c music_ogg_stb.c music_opus.c &
++       remap_channels.c &
+        music_flac.c music_drflac.c music_wavpack.c &
+        mp3utils.c music_mpg123.c music_minimp3.c &
+        music_xmp.c music_modplug.c music_gme.c &
+diff --git a/README.txt b/README.txt
+--- a/README.txt
++++ b/README.txt
+@@ -15,7 +15,7 @@
+ (On some Linux distributions you can install the fluid-soundfont-gm package)
+ 
+ To play MIDI files using Timidity, you'll need to get a complete set of GUS patches from:
+-http://www.libsdl.org/projects/mixer/timidity/timidity.tar.gz
++https://www.libsdl.org/projects/old/SDL_mixer/timidity/timidity.tar.gz
+ and unpack them in /usr/local/lib under UNIX, and C:\ under Win32.
+ 
+ This library is under the zlib license, see the file "LICENSE.txt" for details.
+diff --git a/SDL2_mixerConfig.cmake.in b/SDL2_mixerConfig.cmake.in
+--- a/SDL2_mixerConfig.cmake.in
++++ b/SDL2_mixerConfig.cmake.in
+@@ -43,17 +43,13 @@
+ set(SDL2MIXER_WAVPACK               @SDL2MIXER_WAVPACK@)
+ 
+ set(SDL2MIXER_SDL2_REQUIRED_VERSION @SDL_REQUIRED_VERSION@)
+-
+-if(NOT SDL2MIXER_VENDORED)
+-    set(_sdl_cmake_module_path "${CMAKE_MODULE_PATH}")
+-    list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
+-endif()
+-
+ if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/SDL2_mixer-shared-targets.cmake")
+     include("${CMAKE_CURRENT_LIST_DIR}/SDL2_mixer-shared-targets.cmake")
+ endif()
+ 
+ if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/SDL2_mixer-static-targets.cmake")
++    set(_sdl_cmake_module_path "${CMAKE_MODULE_PATH}")
++    list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
+ 
+     include(CMakeFindDependencyMacro)
+     include(PkgConfigHelper)
+@@ -114,9 +110,7 @@
+         endif()
+     endif()
+     include("${CMAKE_CURRENT_LIST_DIR}/SDL2_mixer-static-targets.cmake")
+-endif()
+ 
+-if(NOT SDL2MIXER_VENDORED)
+     set(CMAKE_MODULE_PATH "${_sdl_cmake_module_path}")
+     unset(_sdl_cmake_module_path)
+ endif()
+diff --git a/acinclude/libtool.m4 b/acinclude/libtool.m4
+--- a/acinclude/libtool.m4
++++ b/acinclude/libtool.m4
+@@ -931,6 +931,17 @@
+ 	rm -rf libconftest.dylib*
+ 	rm -f conftest.*
+       fi])
++    # Feature test to disable chained fixups since it is not
++    # compatible with '-undefined dynamic_lookup'
++    AC_CACHE_CHECK([for -no_fixup_chains linker flag],
++      [lt_cv_support_no_fixup_chains],
++      [save_LDFLAGS=$LDFLAGS
++      LDFLAGS="$LDFLAGS -Wl,-no_fixup_chains"
++      AC_LINK_IFELSE([AC_LANG_PROGRAM([],[])],
++	[lt_cv_support_no_fixup_chains=yes],
++	[lt_cv_support_no_fixup_chains=no])
++	LDFLAGS=$save_LDFLAGS
++    ])
+     AC_CACHE_CHECK([for -exported_symbols_list linker flag],
+       [lt_cv_ld_exported_symbols_list],
+       [lt_cv_ld_exported_symbols_list=no
+@@ -952,7 +963,12 @@
+ 	10.[[012]],*|,*powerpc*-darwin[[5-8]]*)
+ 	  _lt_dar_allow_undefined='${wl}-flat_namespace ${wl}-undefined ${wl}suppress' ;;
+ 	*)
+-	  _lt_dar_allow_undefined='${wl}-undefined ${wl}dynamic_lookup' ;;
++	  if test yes = "$lt_cv_support_no_fixup_chains"; then
++	    _lt_dar_allow_undefined='${wl}-undefined ${wl}dynamic_lookup ${wl}-no_fixup_chains'
++	  else
++	    _lt_dar_allow_undefined='${wl}-undefined ${wl}dynamic_lookup'
++	  fi
++	;;
+       esac
+     ;;
+   esac
+@@ -4397,17 +4413,17 @@
+       _LT_TAGVAR(hardcode_minus_L, $1)=yes
+       _LT_TAGVAR(allow_undefined_flag, $1)=unsupported
+       shrext_cmds=".dll"
+-      _LT_TAGVAR(archive_cmds, $1)='$ECHO "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
+-	$ECHO "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
+-	$ECHO "DATA MULTIPLE NONSHARED">> $output_objdir/$libname.def~
+-	$ECHO EXPORTS >> $output_objdir/$libname.def~
++      _LT_TAGVAR(archive_cmds, $1)='echo "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
++	echo "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
++	echo "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
++	echo EXPORTS >> $output_objdir/$libname.def~
+ 	emxexp $libobjs | $SED /"_DLL_InitTerm"/d >> $output_objdir/$libname.def~
+ 	$CC -Zdll -Zcrtdll -o $output_objdir/$soname $libobjs $deplibs $compiler_flags $output_objdir/$libname.def~
+ 	emximp -o $lib $output_objdir/$libname.def'
+-      _LT_TAGVAR(archive_expsym_cmds, $1)='$ECHO "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
+-	$ECHO "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
+-	$ECHO "DATA MULTIPLE NONSHARED">> $output_objdir/$libname.def~
+-	$ECHO EXPORTS >> $output_objdir/$libname.def~
++      _LT_TAGVAR(archive_expsym_cmds, $1)='echo "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
++	echo "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
++	echo "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
++	echo EXPORTS >> $output_objdir/$libname.def~
+ 	prefix_cmds="$SED"~
+ 	if test "x`$SED 1q $export_symbols`" = xEXPORTS; then
+ 	  prefix_cmds="$prefix_cmds -e 1d";
+@@ -4416,7 +4432,6 @@
+ 	cat $export_symbols | $prefix_cmds >> $output_objdir/$libname.def~
+ 	$CC -Zdll -Zcrtdll -o $output_objdir/$soname $libobjs $deplibs $compiler_flags $output_objdir/$libname.def~
+ 	emximp -o $lib $output_objdir/$libname.def'
+-      _LT_TAGVAR(old_archive_from_new_cmds, $1)='emximp -o $output_objdir/${libname}_dll.a $output_objdir/$libname.def'
+       _LT_TAGVAR(enable_shared_with_static_runtimes, $1)=yes
+       ;;
+ 
+@@ -4977,17 +4992,17 @@
+       _LT_TAGVAR(hardcode_minus_L, $1)=yes
+       _LT_TAGVAR(allow_undefined_flag, $1)=unsupported
+       shrext_cmds=".dll"
+-      _LT_TAGVAR(archive_cmds, $1)='$ECHO "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
+-	$ECHO "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
+-	$ECHO "DATA MULTIPLE NONSHARED">> $output_objdir/$libname.def~
+-	$ECHO EXPORTS >> $output_objdir/$libname.def~
++      _LT_TAGVAR(archive_cmds, $1)='echo "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
++	echo "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
++	echo "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
++	echo EXPORTS >> $output_objdir/$libname.def~
+ 	emxexp $libobjs | $SED /"_DLL_InitTerm"/d >> $output_objdir/$libname.def~
+ 	$CC -Zdll -Zcrtdll -o $output_objdir/$soname $libobjs $deplibs $compiler_flags $output_objdir/$libname.def~
+ 	emximp -o $lib $output_objdir/$libname.def'
+-      _LT_TAGVAR(archive_expsym_cmds, $1)='$ECHO "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
+-	$ECHO "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
+-	$ECHO "DATA MULTIPLE NONSHARED">> $output_objdir/$libname.def~
+-	$ECHO EXPORTS >> $output_objdir/$libname.def~
++      _LT_TAGVAR(archive_expsym_cmds, $1)='echo "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
++	echo "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
++	echo "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
++	echo EXPORTS >> $output_objdir/$libname.def~
+ 	prefix_cmds="$SED"~
+ 	if test "x`$SED 1q $export_symbols`" = xEXPORTS; then
+ 	  prefix_cmds="$prefix_cmds -e 1d";
+@@ -4996,7 +5011,6 @@
+ 	cat $export_symbols | $prefix_cmds >> $output_objdir/$libname.def~
+ 	$CC -Zdll -Zcrtdll -o $output_objdir/$soname $libobjs $deplibs $compiler_flags $output_objdir/$libname.def~
+ 	emximp -o $lib $output_objdir/$libname.def'
+-      _LT_TAGVAR(old_archive_from_new_cmds, $1)='emximp -o $output_objdir/${libname}_dll.a $output_objdir/$libname.def'
+       _LT_TAGVAR(enable_shared_with_static_runtimes, $1)=yes
+       ;;
+ 
+@@ -5755,17 +5769,17 @@
+ 	_LT_TAGVAR(hardcode_minus_L, $1)=yes
+ 	_LT_TAGVAR(allow_undefined_flag, $1)=unsupported
+ 	shrext_cmds=".dll"
+-	_LT_TAGVAR(archive_cmds, $1)='$ECHO "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
+-	  $ECHO "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
+-	  $ECHO "DATA MULTIPLE NONSHARED">> $output_objdir/$libname.def~
+-	  $ECHO EXPORTS >> $output_objdir/$libname.def~
++	_LT_TAGVAR(archive_cmds, $1)='echo "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
++	  echo "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
++	  echo "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
++	  echo EXPORTS >> $output_objdir/$libname.def~
+ 	  emxexp $libobjs | $SED /"_DLL_InitTerm"/d >> $output_objdir/$libname.def~
+ 	  $CC -Zdll -Zcrtdll -o $output_objdir/$soname $libobjs $deplibs $compiler_flags $output_objdir/$libname.def~
+ 	  emximp -o $lib $output_objdir/$libname.def'
+-	_LT_TAGVAR(archive_expsym_cmds, $1)='$ECHO "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
+-	  $ECHO "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
+-	  $ECHO "DATA MULTIPLE NONSHARED">> $output_objdir/$libname.def~
+-	  $ECHO EXPORTS >> $output_objdir/$libname.def~
++	_LT_TAGVAR(archive_expsym_cmds, $1)='echo "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
++	  echo "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
++	  echo "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
++	  echo EXPORTS >> $output_objdir/$libname.def~
+ 	  prefix_cmds="$SED"~
+ 	  if test "x`$SED 1q $export_symbols`" = xEXPORTS; then
+ 	    prefix_cmds="$prefix_cmds -e 1d";
+@@ -5774,7 +5788,6 @@
+ 	  cat $export_symbols | $prefix_cmds >> $output_objdir/$libname.def~
+ 	  $CC -Zdll -Zcrtdll -o $output_objdir/$soname $libobjs $deplibs $compiler_flags $output_objdir/$libname.def~
+ 	  emximp -o $lib $output_objdir/$libname.def'
+-	_LT_TAGVAR(old_archive_from_new_cmds, $1)='emximp -o $output_objdir/${libname}_dll.a $output_objdir/$libname.def'
+ 	_LT_TAGVAR(enable_shared_with_static_runtimes, $1)=yes
+ 	;;
+ 
+diff --git a/build-scripts/build-release.py b/build-scripts/build-release.py
+--- a/build-scripts/build-release.py
++++ b/build-scripts/build-release.py
+@@ -37,6 +37,8 @@
+ GIT_HASH_FILENAME = ".git-hash"
+ REVISION_TXT = "REVISION.txt"
+ 
++RE_ILLEGAL_MINGW_LIBRARIES = re.compile(r"(?:lib)?(?:gcc|(?:std)?c[+][+]|(?:win)?pthread).*", flags=re.I)
++
+ 
+ def safe_isotime_to_datetime(str_isotime: str) -> datetime.datetime:
+     try:
+@@ -532,6 +534,16 @@
+         return path_times
+ 
+ 
++class AndroidApiVersion:
++    def __init__(self, name: str, ints: tuple[int, ...]):
++        self.name = name
++        self.ints = ints
++
++    def __repr__(self) -> str:
++        return f"<{self.name} ({'.'.join(str(v) for v in self.ints)})>"
++
++ANDROID_ABI_EXTRA_LINK_OPTIONS = {}
++
+ class Releaser:
+     def __init__(self, release_info: dict, commit: str, revision: str, root: Path, dist_path: Path, section_printer: SectionPrinter, executer: Executer, cmake_generator: str, deps_path: Path, overwrite: bool, github: bool, fast: bool):
+         self.release_info = release_info
+@@ -684,6 +696,15 @@
+     def git_hash_data(self) -> bytes:
+         return f"{self.commit}\n".encode()
+ 
++    def verify_mingw_library(self, triplet: str, path: Path):
++        objdump_output = self.executer.check_output([f"{triplet}-objdump", "-p", str(path)])
++        libraries = re.findall(r"DLL Name: ([^\n]+)", objdump_output)
++        logger.info("%s (%s) libraries: %r", path, triplet, libraries)
++        illegal_libraries = list(filter(RE_ILLEGAL_MINGW_LIBRARIES.match, libraries))
++        logger.error("Detected 'illegal' libraries: %r", illegal_libraries)
++        if illegal_libraries:
++            raise Exception(f"{path} links to illegal libraries: {illegal_libraries}")
++
+     def create_mingw_archives(self) -> None:
+         build_type = "Release"
+         build_parent_dir = self.root / "build-mingw"
+@@ -790,6 +811,7 @@
+                     self.executer.run(["make", f"-j{self.cpu_count}"], cwd=build_path, env=new_env)
+                 with self.section_printer.group(f"Install MinGW {triplet} (autotools)"):
+                     self.executer.run(["make", "install"], cwd=build_path, env=new_env)
++                self.verify_mingw_library(triplet=ARCH_TO_TRIPLET[arch], path=install_path / "bin" / f"{self.project}.dll")
+                 archive_file_tree.add_directory_tree(arc_dir=arc_join(arc_root, triplet), path=install_path, time=self.arc_time)
+ 
+                 print("Recording arch-dependent extra files for MinGW development archive ...")
+@@ -845,6 +867,7 @@
+                         self.executer.run(["cmake", "--build", str(build_path), "--verbose", "--config", build_type], cwd=build_path, env=new_env)
+                     with self.section_printer.group(f"Install MinGW {triplet} (CMake)"):
+                         self.executer.run(["cmake", "--install", str(build_path)], cwd=build_path, env=new_env)
++                self.verify_mingw_library(triplet=ARCH_TO_TRIPLET[arch], path=install_path / "bin" / f"{self.project}.dll")
+                 archive_file_tree.add_directory_tree(arc_dir=arc_join(arc_root, triplet), path=install_path, time=self.arc_time)
+ 
+                 print("Recording arch-dependent extra files for MinGW development archive ...")
+@@ -872,22 +895,25 @@
+         self.artifacts["mingw-devel-tar-gz"] = tgz_path
+         self.artifacts["mingw-devel-tar-xz"] = txz_path
+ 
+-    def _detect_android_api(self, android_home: str) -> typing.Optional[int]:
++    def _detect_android_api(self, android_home: str) -> typing.Optional[AndroidApiVersion]:
+         platform_dirs = list(Path(p) for p in glob.glob(f"{android_home}/platforms/android-*"))
+-        re_platform = re.compile("android-([0-9]+)")
+-        platform_versions = []
++        re_platform = re.compile("^android-([0-9]+)(?:-ext([0-9]+))?$")
++        platform_versions: list[AndroidApiVersion] = []
+         for platform_dir in platform_dirs:
+             logger.debug("Found Android Platform SDK: %s", platform_dir)
++            if not (platform_dir / "android.jar").is_file():
++                logger.debug("Skipping SDK, missing android.jar")
++                continue
+             if m:= re_platform.match(platform_dir.name):
+-                platform_versions.append(int(m.group(1)))
+-        platform_versions.sort()
++                platform_versions.append(AndroidApiVersion(name=platform_dir.name, ints=(int(m.group(1)), int(m.group(2) or 0))))
++        platform_versions.sort(key=lambda v: v.ints)
+         logger.info("Available platform versions: %s", platform_versions)
+-        platform_versions = list(filter(lambda v: v >= self._android_api_minimum, platform_versions))
+-        logger.info("Valid platform versions (>=%d): %s", self._android_api_minimum, platform_versions)
++        platform_versions = list(filter(lambda v: v.ints >= self._android_api_minimum.ints, platform_versions))
++        logger.info("Valid platform versions (>=%s): %s", self._android_api_minimum.ints, platform_versions)
+         if not platform_versions:
+             return None
+         android_api = platform_versions[0]
+-        logger.info("Selected API version %d", android_api)
++        logger.info("Selected API version %s", android_api)
+         return android_api
+ 
+     def _get_prefab_json_text(self) -> str:
+@@ -911,8 +937,19 @@
+         return json.dumps(module_json_dict, indent=4)
+ 
+     @property
+-    def _android_api_minimum(self):
+-        return self.release_info["android"]["api-minimum"]
++    def _android_api_minimum(self) -> AndroidApiVersion:
++        value = self.release_info["android"]["api-minimum"]
++        if isinstance(value, int):
++            ints = (value, )
++        elif isinstance(value, str):
++            ints = tuple(split("."))
++        else:
++            raise ValueError("Invalid android.api-minimum: must be X or X.Y")
++        match len(ints):
++            case 1: name = f"android-{ints[0]}"
++            case 2: name = f"android-{ints[0]}-ext-{ints[1]}"
++            case _: raise ValueError("Invalid android.api-minimum: must be X or X.Y")
++        return AndroidApiVersion(name=name, ints=ints)
+ 
+     @property
+     def _android_api_target(self):
+@@ -925,7 +962,7 @@
+     def _get_prefab_abi_json_text(self, abi: str, cpp: bool, shared: bool) -> str:
+         abi_json_dict = {
+             "abi": abi,
+-            "api": self._android_api_minimum,
++            "api": self._android_api_minimum.ints[0],
+             "ndk": self._android_ndk_minimum,
+             "stl": "c++_shared" if cpp else "none",
+             "static": not shared,
+@@ -938,7 +975,7 @@
+                 xmlns:android="http://schemas.android.com/apk/res/android"
+                 package="org.libsdl.android.{self.project}" android:versionCode="1"
+                 android:versionName="1.0">
+-                <uses-sdk android:minSdkVersion="{self._android_api_minimum}"
++                <uses-sdk android:minSdkVersion="{self._android_api_minimum.ints[0]}"
+                           android:targetSdkVersion="{self._android_api_target}" />
+             </manifest>
+         """)
+@@ -948,7 +985,8 @@
+         if not cmake_toolchain_file.exists():
+             logger.error("CMake toolchain file does not exist (%s)", cmake_toolchain_file)
+             raise SystemExit(1)
+-        aar_path =  self.dist_path / f"{self.project}-{self.version}.aar"
++        aar_path = self.root / "build-android" / f"{self.project}-{self.version}.aar"
++        android_dist_path = self.dist_path / f"{self.project}-devel-{self.version}-android.zip"
+         android_abis = self.release_info["android"]["abis"]
+         java_jars_added = False
+         module_data_added = False
+@@ -956,16 +994,27 @@
+         shutil.rmtree(android_deps_path, ignore_errors=True)
+ 
+         for dep, depinfo in self.release_info["android"].get("dependencies", {}).items():
+-            android_aar = self.deps_path / glob.glob(depinfo["artifact"], root_dir=self.deps_path)[0]
+-            with self.section_printer.group(f"Extracting Android dependency {dep} ({android_aar.name})"):
+-                self.executer.run([sys.executable, str(android_aar), "-o", str(android_deps_path)])
++            dep_devel_zip = self.deps_path / glob.glob(depinfo["artifact"], root_dir=self.deps_path)[0]
++
++            dep_extract_path = self.deps_path / f"extract/android/{dep}"
++            shutil.rmtree(dep_extract_path, ignore_errors=True)
++            dep_extract_path.mkdir(parents=True, exist_ok=True)
++
++            with self.section_printer.group(f"Extracting Android dependency {dep} ({dep_devel_zip})"):
++                with zipfile.ZipFile(dep_devel_zip, "r") as zf:
++                    zf.extractall(dep_extract_path)
++
++                dep_devel_aar = dep_extract_path / glob.glob("*.aar", root_dir=dep_extract_path)[0]
++                self.executer.run([sys.executable, str(dep_devel_aar), "-o", str(android_deps_path)])
+ 
+         for module_name, module_info in self.release_info["android"]["modules"].items():
+             assert "type" in module_info and module_info["type"] in ("interface", "library"), f"module {module_name} must have a valid type"
+ 
+-        archive_file_tree = ArchiveFileTree()
++        aar_file_tree = ArchiveFileTree()
++        android_devel_file_tree = ArchiveFileTree()
+ 
+         for android_abi in android_abis:
++            extra_link_options = ANDROID_ABI_EXTRA_LINK_OPTIONS.get(android_abi, "")
+             with self.section_printer.group(f"Building for Android {android_api} {android_abi}"):
+                 build_dir = self.root / "build-android" / f"{android_abi}-build"
+                 install_dir = self.root / "install-android" / f"{android_abi}-install"
+@@ -976,8 +1025,11 @@
+                     "cmake",
+                     "-S", str(self.root),
+                     "-B", str(build_dir),
+-                    f'''-DCMAKE_C_FLAGS="-ffile-prefix-map={self.root}=/src/{self.project}"''',
+-                    f'''-DCMAKE_CXX_FLAGS="-ffile-prefix-map={self.root}=/src/{self.project}"''',
++                    # NDK 21e does not support -ffile-prefix-map
++                    # f'''-DCMAKE_C_FLAGS="-ffile-prefix-map={self.root}=/src/{self.project}"''',
++                    # f'''-DCMAKE_CXX_FLAGS="-ffile-prefix-map={self.root}=/src/{self.project}"''',
++                    f"-DCMAKE_EXE_LINKER_FLAGS={extra_link_options}",
++                    f"-DCMAKE_SHARED_LINKER_FLAGS={extra_link_options}",
+                     f"-DCMAKE_TOOLCHAIN_FILE={cmake_toolchain_file}",
+                     f"-DCMAKE_PREFIX_PATH={str(android_deps_path)}",
+                     f"-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH",
+@@ -1014,20 +1066,20 @@
+                         assert library.suffix in (".so", ".a")
+                         assert library.is_file(), f"CMake should have built library '{library}' for module {module_name}"
+                         arcdir_prefab_libs = f"{arcdir_prefab_module}/libs/android.{android_abi}"
+-                        archive_file_tree.add_file(NodeInArchive.from_fs(arcpath=f"{arcdir_prefab_libs}/{library.name}", path=library, time=self.arc_time))
+-                        archive_file_tree.add_file(NodeInArchive.from_text(arcpath=f"{arcdir_prefab_libs}/abi.json", text=self._get_prefab_abi_json_text(abi=android_abi, cpp=False, shared=library.suffix == ".so"), time=self.arc_time))
++                        aar_file_tree.add_file(NodeInArchive.from_fs(arcpath=f"{arcdir_prefab_libs}/{library.name}", path=library, time=self.arc_time))
++                        aar_file_tree.add_file(NodeInArchive.from_text(arcpath=f"{arcdir_prefab_libs}/abi.json", text=self._get_prefab_abi_json_text(abi=android_abi, cpp=False, shared=library.suffix == ".so"), time=self.arc_time))
+ 
+                     if not module_data_added:
+                         library_name = None
+                         if module_info["type"] == "library":
+                             library_name = Path(module_info["library"]).stem.removeprefix("lib")
+                         export_libraries = module_info.get("export-libraries", [])
+-                        archive_file_tree.add_file(NodeInArchive.from_text(arcpath=arc_join(arcdir_prefab_module, "module.json"), text=self._get_prefab_module_json_text(library_name=library_name, export_libraries=export_libraries), time=self.arc_time))
++                        aar_file_tree.add_file(NodeInArchive.from_text(arcpath=arc_join(arcdir_prefab_module, "module.json"), text=self._get_prefab_module_json_text(library_name=library_name, export_libraries=export_libraries), time=self.arc_time))
+                         arcdir_prefab_include = f"prefab/modules/{module_name}/include"
+                         if "includes" in module_info:
+-                            archive_file_tree.add_file_mapping(arc_dir=arcdir_prefab_include, file_mapping=module_info["includes"], file_mapping_root=install_dir, context=self.get_context(), time=self.arc_time)
++                            aar_file_tree.add_file_mapping(arc_dir=arcdir_prefab_include, file_mapping=module_info["includes"], file_mapping_root=install_dir, context=self.get_context(), time=self.arc_time)
+                         else:
+-                            archive_file_tree.add_file(NodeInArchive.from_text(arcpath=arc_join(arcdir_prefab_include, ".keep"), text="\n", time=self.arc_time))
++                            aar_file_tree.add_file(NodeInArchive.from_text(arcpath=arc_join(arcdir_prefab_include, ".keep"), text="\n", time=self.arc_time))
+                 module_data_added = True
+ 
+                 if not java_jars_added:
+@@ -1040,21 +1092,28 @@
+                         assert sources_jar_path.is_file(), f"CMake should have archived the java sources into a JAR ({sources_jar_path})"
+                         assert doc_jar_path.is_file(), f"CMake should have archived javadoc into a JAR ({doc_jar_path})"
+ 
+-                        archive_file_tree.add_file(NodeInArchive.from_fs(arcpath="classes.jar", path=classes_jar_path, time=self.arc_time))
+-                        archive_file_tree.add_file(NodeInArchive.from_fs(arcpath="classes-sources.jar", path=sources_jar_path, time=self.arc_time))
+-                        archive_file_tree.add_file(NodeInArchive.from_fs(arcpath="classes-doc.jar", path=doc_jar_path, time=self.arc_time))
++                        aar_file_tree.add_file(NodeInArchive.from_fs(arcpath="classes.jar", path=classes_jar_path, time=self.arc_time))
++                        aar_file_tree.add_file(NodeInArchive.from_fs(arcpath="classes-sources.jar", path=sources_jar_path, time=self.arc_time))
++                        aar_file_tree.add_file(NodeInArchive.from_fs(arcpath="classes-doc.jar", path=doc_jar_path, time=self.arc_time))
+ 
+         assert ("jars" in self.release_info["android"] and java_jars_added) or "jars" not in self.release_info["android"], "Must have archived java JAR archives"
+ 
+-        archive_file_tree.add_file_mapping(arc_dir="", file_mapping=self.release_info["android"].get("files", {}), file_mapping_root=self.root, context=self.get_context(), time=self.arc_time)
++        aar_file_tree.add_file_mapping(arc_dir="", file_mapping=self.release_info["android"]["aar-files"], file_mapping_root=self.root, context=self.get_context(), time=self.arc_time)
+ 
+-        archive_file_tree.add_file(NodeInArchive.from_text(arcpath="prefab/prefab.json", text=self._get_prefab_json_text(), time=self.arc_time))
+-        archive_file_tree.add_file(NodeInArchive.from_text(arcpath="AndroidManifest.xml", text=self._get_android_manifest_text(), time=self.arc_time))
++        aar_file_tree.add_file(NodeInArchive.from_text(arcpath="prefab/prefab.json", text=self._get_prefab_json_text(), time=self.arc_time))
++        aar_file_tree.add_file(NodeInArchive.from_text(arcpath="AndroidManifest.xml", text=self._get_android_manifest_text(), time=self.arc_time))
+ 
+         with Archiver(zip_path=aar_path) as archiver:
+-            archive_file_tree.add_to_archiver(archive_base="", archiver=archiver)
++            aar_file_tree.add_to_archiver(archive_base="", archiver=archiver)
+             archiver.add_git_hash(arcdir="", commit=self.commit, time=self.arc_time)
+-        self.artifacts[f"android-aar"] = aar_path
++
++        android_devel_file_tree.add_file(NodeInArchive.from_fs(arcpath=aar_path.name, path=aar_path))
++        android_devel_file_tree.add_file_mapping(arc_dir="", file_mapping=self.release_info["android"]["files"], file_mapping_root=self.root, context=self.get_context(), time=self.arc_time)
++        with Archiver(zip_path=android_dist_path) as archiver:
++            android_devel_file_tree.add_to_archiver(archive_base="", archiver=archiver)
++            archiver.add_git_hash(arcdir="", commit=self.commit, time=self.arc_time)
++
++        self.artifacts[f"android-aar"] = android_dist_path
+ 
+     def download_dependencies(self):
+         shutil.rmtree(self.deps_path, ignore_errors=True)
+@@ -1091,7 +1150,7 @@
+                 assert len(msvc_matches) == 1, f"Exactly one archive matches msvc {dep} dependency: {msvc_matches}"
+             if "android" in self.release_info:
+                 android_matches = glob.glob(self.release_info["android"]["dependencies"][dep]["artifact"], root_dir=self.deps_path)
+-                assert len(android_matches) == 1, f"Exactly one archive matches msvc {dep} dependency: {msvc_matches}"
++                assert len(android_matches) == 1, f"Exactly one archive matches msvc {dep} dependency: {android_matches}"
+ 
+     @staticmethod
+     def _arch_to_vs_platform(arch: str, configuration: str="Release") -> VsArchPlatformConfig:
+@@ -1217,6 +1276,10 @@
+         platform_context = self.get_context(extra_context=arch_platform.extra_context())
+ 
+         build_type = "Release"
++        extra_context = {
++            "ARCH": arch_platform.arch,
++            "PLATFORM": arch_platform.platform,
++        }
+ 
+         built_paths = set(install_path / configure_text(f, context=platform_context) for file_mapping in (self.release_info["msvc"]["cmake"]["files-lib"], self.release_info["msvc"]["cmake"]["files-devel"]) for files_list in file_mapping.values() for f in files_list)
+         logger.info("CMake builds these files, to be included in the package: %s", built_paths)
+@@ -1267,7 +1330,7 @@
+         logger.info("Collecting files...")
+         archive_file_tree = ArchiveFileTree()
+         archive_file_tree.add_file_mapping(arc_dir="", file_mapping=self.release_info["msvc"]["cmake"]["files-lib"], file_mapping_root=install_path, context=platform_context, time=self.arc_time)
+-        archive_file_tree.add_file_mapping(arc_dir="", file_mapping=self.release_info["msvc"]["files-lib"], file_mapping_root=self.root, context=self.get_context(), time=self.arc_time)
++        archive_file_tree.add_file_mapping(arc_dir="", file_mapping=self.release_info["msvc"]["files-lib"], file_mapping_root=self.root, context=self.get_context(extra_context=extra_context), time=self.arc_time)
+ 
+         logger.info("Creating %s", zip_path)
+         with Archiver(zip_path=zip_path) as archiver:
+@@ -1331,7 +1394,7 @@
+     parser.add_argument("--actions", choices=["download", "source", "android", "mingw", "msvc", "dmg"], required=True, nargs="+", dest="actions", help="What to do?")
+     parser.set_defaults(loglevel=logging.INFO)
+     parser.add_argument('--vs-year', dest="vs_year", help="Visual Studio year")
+-    parser.add_argument('--android-api', type=int, dest="android_api", help="Android API version")
++    parser.add_argument('--android-api', dest="android_api", help="Android API version")
+     parser.add_argument('--android-home', dest="android_home", default=os.environ.get("ANDROID_HOME"), help="Android Home folder")
+     parser.add_argument('--android-ndk-home', dest="android_ndk_home", default=os.environ.get("ANDROID_NDK_HOME"), help="Android NDK Home folder")
+     parser.add_argument('--cmake-generator', dest="cmake_generator", default="Ninja", help="CMake Generator")
+@@ -1458,14 +1521,27 @@
+         if args.android_api is None:
+             with section_printer.group("Detect Android APIS"):
+                 args.android_api = releaser._detect_android_api(android_home=args.android_home)
+-        if args.android_api is None or not (Path(args.android_home) / f"platforms/android-{args.android_api}").is_dir():
++        else:
++            try:
++                android_api_ints = tuple(int(v) for v in args.android_api.split("."))
++                match len(android_api_ints):
++                    case 1: android_api_name = f"android-{android_api_ints[0]}"
++                    case 2: android_api_name = f"android-{android_api_ints[0]}-ext-{android_api_ints[1]}"
++                    case _: raise ValueError
++            except ValueError:
++                logger.error("Invalid --android-api, must be a 'X' or 'X.Y' version")
++            args.android_api = AndroidApiVersion(ints=android_api_ints, name=android_api_name)
++        if args.android_api is None:
+             parser.error("Invalid --android-api, and/or could not be detected")
++        android_api_path = Path(args.android_home) / f"platforms/{args.android_api.name}"
++        if not android_api_path.is_dir():
++            logger.warning(f"Android API directory does not exist ({android_api_path})")
+         with section_printer.group("Android arguments"):
+             print(f"android_home     = {args.android_home}")
+             print(f"android_ndk_home = {args.android_ndk_home}")
+             print(f"android_api      = {args.android_api}")
+         releaser.create_android_archives(
+-            android_api=args.android_api,
++            android_api=args.android_api.ints[0],
+             android_home=args.android_home,
+             android_ndk_home=args.android_ndk_home,
+         )
+diff --git a/build-scripts/config.guess b/build-scripts/config.guess
+--- a/build-scripts/config.guess
++++ b/build-scripts/config.guess
+@@ -1,10 +1,10 @@
+ #! /bin/sh
+ # Attempt to guess a canonical system name.
+-#   Copyright 1992-2024 Free Software Foundation, Inc.
++#   Copyright 1992-2025 Free Software Foundation, Inc.
+ 
+ # shellcheck disable=SC2006,SC2268 # see below for rationale
+ 
+-timestamp='2024-07-27'
++timestamp='2025-07-10'
+ 
+ # This file is free software; you can redistribute it and/or modify it
+ # under the terms of the GNU General Public License as published by
+@@ -60,7 +60,7 @@
+ GNU config.guess ($timestamp)
+ 
+ Originally written by Per Bothner.
+-Copyright 1992-2024 Free Software Foundation, Inc.
++Copyright 1992-2025 Free Software Foundation, Inc.
+ 
+ This is free software; see the source for copying conditions.  There is NO
+ warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
+@@ -1597,8 +1597,11 @@
+     *:Unleashed:*:*)
+ 	GUESS=$UNAME_MACHINE-unknown-unleashed$UNAME_RELEASE
+ 	;;
+-    *:Ironclad:*:*)
+-	GUESS=$UNAME_MACHINE-unknown-ironclad
++    x86_64:[Ii]ronclad:*:*|i?86:[Ii]ronclad:*:*)
++	GUESS=$UNAME_MACHINE-pc-ironclad-mlibc
++	;;
++    *:[Ii]ronclad:*:*)
++	GUESS=$UNAME_MACHINE-unknown-ironclad-mlibc
+ 	;;
+ esac
+ 
+@@ -1808,8 +1811,8 @@
+ exit 1
+ 
+ # Local variables:
+-# eval: (add-hook 'before-save-hook 'time-stamp)
++# eval: (add-hook 'before-save-hook 'time-stamp nil t)
+ # time-stamp-start: "timestamp='"
+-# time-stamp-format: "%:y-%02m-%02d"
++# time-stamp-format: "%Y-%02m-%02d"
+ # time-stamp-end: "'"
+ # End:
+diff --git a/build-scripts/config.sub b/build-scripts/config.sub
+--- a/build-scripts/config.sub
++++ b/build-scripts/config.sub
+@@ -1,10 +1,10 @@
+ #! /bin/sh
+ # Configuration validation subroutine script.
+-#   Copyright 1992-2024 Free Software Foundation, Inc.
++#   Copyright 1992-2025 Free Software Foundation, Inc.
+ 
+ # shellcheck disable=SC2006,SC2268,SC2162 # see below for rationale
+ 
+-timestamp='2024-05-27'
++timestamp='2025-07-10'
+ 
+ # This file is free software; you can redistribute it and/or modify it
+ # under the terms of the GNU General Public License as published by
+@@ -76,7 +76,7 @@
+ version="\
+ GNU config.sub ($timestamp)
+ 
+-Copyright 1992-2024 Free Software Foundation, Inc.
++Copyright 1992-2025 Free Software Foundation, Inc.
+ 
+ This is free software; see the source for copying conditions.  There is NO
+ warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
+@@ -145,6 +145,7 @@
+ 			| kfreebsd*-gnu* \
+ 			| knetbsd*-gnu* \
+ 			| kopensolaris*-gnu* \
++			| ironclad-* \
+ 			| linux-* \
+ 			| managarm-* \
+ 			| netbsd*-eabi* \
+@@ -242,7 +243,6 @@
+ 					| rombug \
+ 					| semi \
+ 					| sequent* \
+-					| siemens \
+ 					| sgi* \
+ 					| siemens \
+ 					| sim \
+@@ -261,7 +261,7 @@
+ 						basic_machine=$field1-$field2
+ 						basic_os=
+ 						;;
+-					zephyr*)
++					tock* | zephyr*)
+ 						basic_machine=$field1-unknown
+ 						basic_os=$field2
+ 						;;
+@@ -1194,7 +1194,7 @@
+ 	xscale-* | xscalee[bl]-*)
+ 		cpu=`echo "$cpu" | sed 's/^xscale/arm/'`
+ 		;;
+-	arm64-* | aarch64le-*)
++	arm64-* | aarch64le-* | arm64_32-*)
+ 		cpu=aarch64
+ 		;;
+ 
+@@ -1321,6 +1321,7 @@
+ 			| i960 \
+ 			| ia16 \
+ 			| ia64 \
++			| intelgt \
+ 			| ip2k \
+ 			| iq2000 \
+ 			| javascript \
+@@ -1522,6 +1523,10 @@
+ 		kernel=nto
+ 		os=`echo "$basic_os" | sed -e 's|nto|qnx|'`
+ 		;;
++	ironclad*)
++		kernel=ironclad
++		os=`echo "$basic_os" | sed -e 's|ironclad|mlibc|'`
++		;;
+ 	linux*)
+ 		kernel=linux
+ 		os=`echo "$basic_os" | sed -e 's|linux|gnu|'`
+@@ -1976,6 +1981,7 @@
+ 	| atheos* \
+ 	| auroraux* \
+ 	| aux* \
++	| banan_os* \
+ 	| beos* \
+ 	| bitrig* \
+ 	| bme* \
+@@ -2022,7 +2028,6 @@
+ 	| ios* \
+ 	| iris* \
+ 	| irix* \
+-	| ironclad* \
+ 	| isc* \
+ 	| its* \
+ 	| l4re* \
+@@ -2118,6 +2123,7 @@
+ 	| sysv* \
+ 	| tenex* \
+ 	| tirtos* \
++	| tock* \
+ 	| toppers* \
+ 	| tops10* \
+ 	| tops20* \
+@@ -2214,6 +2220,8 @@
+ 		;;
+ 	uclinux-uclibc*- | uclinux-gnu*- )
+ 		;;
++	ironclad-mlibc*-)
++		;;
+ 	managarm-mlibc*- | managarm-kernel*- )
+ 		;;
+ 	windows*-msvc*-)
+@@ -2249,6 +2257,8 @@
+ 		;;
+ 	*-eabi*- | *-gnueabi*-)
+ 		;;
++	ios*-simulator- | tvos*-simulator- | watchos*-simulator- )
++		;;
+ 	none--*)
+ 		# None (no kernel, i.e. freestanding / bare metal),
+ 		# can be paired with an machine code file format
+@@ -2347,8 +2357,8 @@
+ exit
+ 
+ # Local variables:
+-# eval: (add-hook 'before-save-hook 'time-stamp)
++# eval: (add-hook 'before-save-hook 'time-stamp nil t)
+ # time-stamp-start: "timestamp='"
+-# time-stamp-format: "%:y-%02m-%02d"
++# time-stamp-format: "%Y-%02m-%02d"
+ # time-stamp-end: "'"
+ # End:
+diff --git a/cmake/PrivateSdlFunctions.cmake b/cmake/PrivateSdlFunctions.cmake
+--- a/cmake/PrivateSdlFunctions.cmake
++++ b/cmake/PrivateSdlFunctions.cmake
+@@ -278,7 +278,6 @@
+ function(sdl_target_link_options_no_undefined TARGET)
+     if(NOT MSVC AND NOT CMAKE_SYSTEM_NAME MATCHES ".*OpenBSD.*")
+         if(CMAKE_C_COMPILER_ID MATCHES "AppleClang")
+-            target_link_options(${TARGET} PRIVATE "-Wl,-undefined,error")
+         else()
+             sdl_check_linker_flag("-Wl,--no-undefined" HAVE_WL_NO_UNDEFINED)
+             if(HAVE_WL_NO_UNDEFINED AND NOT ((CMAKE_C_COMPILER_ID MATCHES "Clang") AND WIN32))
+diff --git a/configure b/configure
+--- a/configure
++++ b/configure
+@@ -6967,6 +6967,40 @@
+ fi
+ { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $lt_cv_apple_cc_single_mod" >&5
+ printf "%s\n" "$lt_cv_apple_cc_single_mod" >&6; }
++    # Feature test to disable chained fixups since it is not
++    # compatible with '-undefined dynamic_lookup'
++    { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for -no_fixup_chains linker flag" >&5
++printf %s "checking for -no_fixup_chains linker flag... " >&6; }
++if test ${lt_cv_support_no_fixup_chains+y}
++then :
++  printf %s "(cached) " >&6
++else $as_nop
++  save_LDFLAGS=$LDFLAGS
++      LDFLAGS="$LDFLAGS -Wl,-no_fixup_chains"
++      cat confdefs.h - <<_ACEOF >conftest.$ac_ext
++/* end confdefs.h.  */
++
++int
++main (void)
++{
++
++  ;
++  return 0;
++}
++_ACEOF
++if ac_fn_c_try_link "$LINENO"
++then :
++  lt_cv_support_no_fixup_chains=yes
++else $as_nop
++  lt_cv_support_no_fixup_chains=no
++fi
++rm -f core conftest.err conftest.$ac_objext conftest.beam \
++    conftest$ac_exeext conftest.$ac_ext
++	LDFLAGS=$save_LDFLAGS
++
++fi
++{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $lt_cv_support_no_fixup_chains" >&5
++printf "%s\n" "$lt_cv_support_no_fixup_chains" >&6; }
+     { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for -exported_symbols_list linker flag" >&5
+ printf %s "checking for -exported_symbols_list linker flag... " >&6; }
+ if test ${lt_cv_ld_exported_symbols_list+y}
+@@ -7011,7 +7045,12 @@
+ 	10.[012],*|,*powerpc*-darwin[5-8]*)
+ 	  _lt_dar_allow_undefined='${wl}-flat_namespace ${wl}-undefined ${wl}suppress' ;;
+ 	*)
+-	  _lt_dar_allow_undefined='${wl}-undefined ${wl}dynamic_lookup' ;;
++	  if test yes = "$lt_cv_support_no_fixup_chains"; then
++	    _lt_dar_allow_undefined='${wl}-undefined ${wl}dynamic_lookup ${wl}-no_fixup_chains'
++	  else
++	    _lt_dar_allow_undefined='${wl}-undefined ${wl}dynamic_lookup'
++	  fi
++	;;
+       esac
+     ;;
+   esac
+@@ -7904,11 +7943,11 @@
+    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
+    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
+    -e 's:$: $lt_compiler_flag:'`
+-   (eval echo "\"\$as_me:7907: $lt_compile\"" >&5)
++   (eval echo "\"\$as_me:7946: $lt_compile\"" >&5)
+    (eval "$lt_compile" 2>conftest.err)
+    ac_status=$?
+    cat conftest.err >&5
+-   echo "$as_me:7911: \$? = $ac_status" >&5
++   echo "$as_me:7950: \$? = $ac_status" >&5
+    if (exit $ac_status) && test -s "$ac_outfile"; then
+      # The compiler can only warn and ignore the option if not recognized
+      # So say no if there are warnings other than the usual output.
+@@ -8254,11 +8293,11 @@
+    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
+    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
+    -e 's:$: $lt_compiler_flag:'`
+-   (eval echo "\"\$as_me:8257: $lt_compile\"" >&5)
++   (eval echo "\"\$as_me:8296: $lt_compile\"" >&5)
+    (eval "$lt_compile" 2>conftest.err)
+    ac_status=$?
+    cat conftest.err >&5
+-   echo "$as_me:8261: \$? = $ac_status" >&5
++   echo "$as_me:8300: \$? = $ac_status" >&5
+    if (exit $ac_status) && test -s "$ac_outfile"; then
+      # The compiler can only warn and ignore the option if not recognized
+      # So say no if there are warnings other than the usual output.
+@@ -8361,11 +8400,11 @@
+    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
+    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
+    -e 's:$: $lt_compiler_flag:'`
+-   (eval echo "\"\$as_me:8364: $lt_compile\"" >&5)
++   (eval echo "\"\$as_me:8403: $lt_compile\"" >&5)
+    (eval "$lt_compile" 2>out/conftest.err)
+    ac_status=$?
+    cat out/conftest.err >&5
+-   echo "$as_me:8368: \$? = $ac_status" >&5
++   echo "$as_me:8407: \$? = $ac_status" >&5
+    if (exit $ac_status) && test -s out/conftest2.$ac_objext
+    then
+      # The compiler can only warn and ignore the option if not recognized
+@@ -8417,11 +8456,11 @@
+    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
+    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
+    -e 's:$: $lt_compiler_flag:'`
+-   (eval echo "\"\$as_me:8420: $lt_compile\"" >&5)
++   (eval echo "\"\$as_me:8459: $lt_compile\"" >&5)
+    (eval "$lt_compile" 2>out/conftest.err)
+    ac_status=$?
+    cat out/conftest.err >&5
+-   echo "$as_me:8424: \$? = $ac_status" >&5
++   echo "$as_me:8463: \$? = $ac_status" >&5
+    if (exit $ac_status) && test -s out/conftest2.$ac_objext
+    then
+      # The compiler can only warn and ignore the option if not recognized
+@@ -8638,17 +8677,17 @@
+       hardcode_minus_L=yes
+       allow_undefined_flag=unsupported
+       shrext_cmds=".dll"
+-      archive_cmds='$ECHO "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
+-	$ECHO "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
+-	$ECHO "DATA MULTIPLE NONSHARED">> $output_objdir/$libname.def~
+-	$ECHO EXPORTS >> $output_objdir/$libname.def~
++      archive_cmds='echo "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
++	echo "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
++	echo "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
++	echo EXPORTS >> $output_objdir/$libname.def~
+ 	emxexp $libobjs | $SED /"_DLL_InitTerm"/d >> $output_objdir/$libname.def~
+ 	$CC -Zdll -Zcrtdll -o $output_objdir/$soname $libobjs $deplibs $compiler_flags $output_objdir/$libname.def~
+ 	emximp -o $lib $output_objdir/$libname.def'
+-      archive_expsym_cmds='$ECHO "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
+-	$ECHO "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
+-	$ECHO "DATA MULTIPLE NONSHARED">> $output_objdir/$libname.def~
+-	$ECHO EXPORTS >> $output_objdir/$libname.def~
++      archive_expsym_cmds='echo "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
++	echo "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
++	echo "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
++	echo EXPORTS >> $output_objdir/$libname.def~
+ 	prefix_cmds="$SED"~
+ 	if test "x`$SED 1q $export_symbols`" = xEXPORTS; then
+ 	  prefix_cmds="$prefix_cmds -e 1d";
+@@ -8657,7 +8696,6 @@
+ 	cat $export_symbols | $prefix_cmds >> $output_objdir/$libname.def~
+ 	$CC -Zdll -Zcrtdll -o $output_objdir/$soname $libobjs $deplibs $compiler_flags $output_objdir/$libname.def~
+ 	emximp -o $lib $output_objdir/$libname.def'
+-      old_archive_from_new_cmds='emximp -o $output_objdir/${libname}_dll.a $output_objdir/$libname.def'
+       enable_shared_with_static_runtimes=yes
+       ;;
+ 
+@@ -9301,17 +9339,17 @@
+       hardcode_minus_L=yes
+       allow_undefined_flag=unsupported
+       shrext_cmds=".dll"
+-      archive_cmds='$ECHO "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
+-	$ECHO "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
+-	$ECHO "DATA MULTIPLE NONSHARED">> $output_objdir/$libname.def~
+-	$ECHO EXPORTS >> $output_objdir/$libname.def~
++      archive_cmds='echo "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
++	echo "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
++	echo "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
++	echo EXPORTS >> $output_objdir/$libname.def~
+ 	emxexp $libobjs | $SED /"_DLL_InitTerm"/d >> $output_objdir/$libname.def~
+ 	$CC -Zdll -Zcrtdll -o $output_objdir/$soname $libobjs $deplibs $compiler_flags $output_objdir/$libname.def~
+ 	emximp -o $lib $output_objdir/$libname.def'
+-      archive_expsym_cmds='$ECHO "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
+-	$ECHO "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
+-	$ECHO "DATA MULTIPLE NONSHARED">> $output_objdir/$libname.def~
+-	$ECHO EXPORTS >> $output_objdir/$libname.def~
++      archive_expsym_cmds='echo "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
++	echo "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
++	echo "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
++	echo EXPORTS >> $output_objdir/$libname.def~
+ 	prefix_cmds="$SED"~
+ 	if test "x`$SED 1q $export_symbols`" = xEXPORTS; then
+ 	  prefix_cmds="$prefix_cmds -e 1d";
+@@ -9320,7 +9358,6 @@
+ 	cat $export_symbols | $prefix_cmds >> $output_objdir/$libname.def~
+ 	$CC -Zdll -Zcrtdll -o $output_objdir/$soname $libobjs $deplibs $compiler_flags $output_objdir/$libname.def~
+ 	emximp -o $lib $output_objdir/$libname.def'
+-      old_archive_from_new_cmds='emximp -o $output_objdir/${libname}_dll.a $output_objdir/$libname.def'
+       enable_shared_with_static_runtimes=yes
+       ;;
+ 
+@@ -10860,7 +10897,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 10863 "configure"
++#line 10900 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -10957,7 +10994,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 10960 "configure"
++#line 10997 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -12267,11 +12304,11 @@
+ then :
+   { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for $CXX option to enable C++11 features" >&5
+ printf %s "checking for $CXX option to enable C++11 features... " >&6; }
+-if test ${ac_cv_prog_cxx_11+y}
+-then :
+-  printf %s "(cached) " >&6
+-else $as_nop
+-  ac_cv_prog_cxx_11=no
++if test ${ac_cv_prog_cxx_cxx11+y}
++then :
++  printf %s "(cached) " >&6
++else $as_nop
++  ac_cv_prog_cxx_cxx11=no
+ ac_save_CXX=$CXX
+ cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+ /* end confdefs.h.  */
+@@ -12313,11 +12350,11 @@
+ then :
+   { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for $CXX option to enable C++98 features" >&5
+ printf %s "checking for $CXX option to enable C++98 features... " >&6; }
+-if test ${ac_cv_prog_cxx_98+y}
+-then :
+-  printf %s "(cached) " >&6
+-else $as_nop
+-  ac_cv_prog_cxx_98=no
++if test ${ac_cv_prog_cxx_cxx98+y}
++then :
++  printf %s "(cached) " >&6
++else $as_nop
++  ac_cv_prog_cxx_cxx98=no
+ ac_save_CXX=$CXX
+ cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+ /* end confdefs.h.  */
+@@ -12637,11 +12674,11 @@
+ then :
+   { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for $CXX option to enable C++11 features" >&5
+ printf %s "checking for $CXX option to enable C++11 features... " >&6; }
+-if test ${ac_cv_prog_cxx_11+y}
+-then :
+-  printf %s "(cached) " >&6
+-else $as_nop
+-  ac_cv_prog_cxx_11=no
++if test ${ac_cv_prog_cxx_cxx11+y}
++then :
++  printf %s "(cached) " >&6
++else $as_nop
++  ac_cv_prog_cxx_cxx11=no
+ ac_save_CXX=$CXX
+ cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+ /* end confdefs.h.  */
+@@ -12683,11 +12720,11 @@
+ then :
+   { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for $CXX option to enable C++98 features" >&5
+ printf %s "checking for $CXX option to enable C++98 features... " >&6; }
+-if test ${ac_cv_prog_cxx_98+y}
+-then :
+-  printf %s "(cached) " >&6
+-else $as_nop
+-  ac_cv_prog_cxx_98=no
++if test ${ac_cv_prog_cxx_cxx98+y}
++then :
++  printf %s "(cached) " >&6
++else $as_nop
++  ac_cv_prog_cxx_cxx98=no
+ ac_save_CXX=$CXX
+ cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+ /* end confdefs.h.  */
+@@ -13418,17 +13455,17 @@
+ 	hardcode_minus_L_CXX=yes
+ 	allow_undefined_flag_CXX=unsupported
+ 	shrext_cmds=".dll"
+-	archive_cmds_CXX='$ECHO "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
+-	  $ECHO "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
+-	  $ECHO "DATA MULTIPLE NONSHARED">> $output_objdir/$libname.def~
+-	  $ECHO EXPORTS >> $output_objdir/$libname.def~
++	archive_cmds_CXX='echo "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
++	  echo "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
++	  echo "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
++	  echo EXPORTS >> $output_objdir/$libname.def~
+ 	  emxexp $libobjs | $SED /"_DLL_InitTerm"/d >> $output_objdir/$libname.def~
+ 	  $CC -Zdll -Zcrtdll -o $output_objdir/$soname $libobjs $deplibs $compiler_flags $output_objdir/$libname.def~
+ 	  emximp -o $lib $output_objdir/$libname.def'
+-	archive_expsym_cmds_CXX='$ECHO "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
+-	  $ECHO "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
+-	  $ECHO "DATA MULTIPLE NONSHARED">> $output_objdir/$libname.def~
+-	  $ECHO EXPORTS >> $output_objdir/$libname.def~
++	archive_expsym_cmds_CXX='echo "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
++	  echo "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
++	  echo "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
++	  echo EXPORTS >> $output_objdir/$libname.def~
+ 	  prefix_cmds="$SED"~
+ 	  if test "x`$SED 1q $export_symbols`" = xEXPORTS; then
+ 	    prefix_cmds="$prefix_cmds -e 1d";
+@@ -13437,7 +13474,6 @@
+ 	  cat $export_symbols | $prefix_cmds >> $output_objdir/$libname.def~
+ 	  $CC -Zdll -Zcrtdll -o $output_objdir/$soname $libobjs $deplibs $compiler_flags $output_objdir/$libname.def~
+ 	  emximp -o $lib $output_objdir/$libname.def'
+-	old_archive_from_new_cmds_CXX='emximp -o $output_objdir/${libname}_dll.a $output_objdir/$libname.def'
+ 	enable_shared_with_static_runtimes_CXX=yes
+ 	;;
+ 
+@@ -14656,11 +14692,11 @@
+    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
+    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
+    -e 's:$: $lt_compiler_flag:'`
+-   (eval echo "\"\$as_me:14659: $lt_compile\"" >&5)
++   (eval echo "\"\$as_me:14695: $lt_compile\"" >&5)
+    (eval "$lt_compile" 2>conftest.err)
+    ac_status=$?
+    cat conftest.err >&5
+-   echo "$as_me:14663: \$? = $ac_status" >&5
++   echo "$as_me:14699: \$? = $ac_status" >&5
+    if (exit $ac_status) && test -s "$ac_outfile"; then
+      # The compiler can only warn and ignore the option if not recognized
+      # So say no if there are warnings other than the usual output.
+@@ -14757,11 +14793,11 @@
+    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
+    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
+    -e 's:$: $lt_compiler_flag:'`
+-   (eval echo "\"\$as_me:14760: $lt_compile\"" >&5)
++   (eval echo "\"\$as_me:14796: $lt_compile\"" >&5)
+    (eval "$lt_compile" 2>out/conftest.err)
+    ac_status=$?
+    cat out/conftest.err >&5
+-   echo "$as_me:14764: \$? = $ac_status" >&5
++   echo "$as_me:14800: \$? = $ac_status" >&5
+    if (exit $ac_status) && test -s out/conftest2.$ac_objext
+    then
+      # The compiler can only warn and ignore the option if not recognized
+@@ -14810,11 +14846,11 @@
+    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
+    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
+    -e 's:$: $lt_compiler_flag:'`
+-   (eval echo "\"\$as_me:14813: $lt_compile\"" >&5)
++   (eval echo "\"\$as_me:14849: $lt_compile\"" >&5)
+    (eval "$lt_compile" 2>out/conftest.err)
+    ac_status=$?
+    cat out/conftest.err >&5
+-   echo "$as_me:14817: \$? = $ac_status" >&5
++   echo "$as_me:14853: \$? = $ac_status" >&5
+    if (exit $ac_status) && test -s out/conftest2.$ac_objext
+    then
+      # The compiler can only warn and ignore the option if not recognized
+diff --git a/include/SDL_mixer.h b/include/SDL_mixer.h
+--- a/include/SDL_mixer.h
++++ b/include/SDL_mixer.h
+@@ -665,9 +665,11 @@
+  * fly. Also, crucially, there are as many channels for chunks as the app can
+  * allocate, but SDL_mixer only offers a single "music" channel.
+  *
+- * If `freesrc` is non-zero, the RWops will be closed before returning,
+- * whether this function succeeds or not. SDL_mixer reads everything it needs
+- * from the RWops during this call in any case.
++ * If `freesrc` is non-zero, the RWops will be closed when SDL_mixer is done
++ * with it, which will be before this function call returns if there is an
++ * error, or perhaps much later if the music is streaming for some time. The
++ * app should not attempt to use the RWops again, as it may become invalid
++ * without warning.
+  *
+  * As a convenience, there is a function to read files from disk without
+  * having to deal with SDL_RWops: `Mix_LoadMUS("filename.mp3")` will manage
+@@ -725,9 +727,11 @@
+  * - `MUS_OPUS` (Opus files)
+  * - `MUS_WAVPACK` (WavPack files)
+  *
+- * If `freesrc` is non-zero, the RWops will be closed before returning,
+- * whether this function succeeds or not. SDL_mixer reads everything it needs
+- * from the RWops during this call in any case.
++ * If `freesrc` is non-zero, the RWops will be closed when SDL_mixer is done
++ * with it, which will be before this function call returns if there is an
++ * error, or perhaps much later if the music is streaming for some time. The
++ * app should not attempt to use the RWops again, as it may become invalid
++ * without warning.
+  *
+  * As a convenience, there is a function to read files from disk without
+  * having to deal with SDL_RWops: `Mix_LoadMUS("filename.mp3")` will manage
+@@ -1266,7 +1270,7 @@
+ extern DECLSPEC void SDLCALL Mix_ChannelFinished(Mix_ChannelFinishedCallback channel_finished);
+ 
+ 
+-#define MIX_CHANNEL_POST  (-2)
++#define MIX_CHANNEL_POST    (-2)
+ 
+ /**
+  * This is the format of a special effect callback:
+@@ -2633,7 +2637,8 @@
+  * Set SoundFonts paths to use by supported MIDI backends.
+  *
+  * You may specify multiple paths in a single string by separating them with
+- * semicolons; they will be searched in the order listed.
++ * semicolons; they will be searched in the _reverse_ order listed (last one
++ * listed will be the first one searched).
+  *
+  * This function replaces any previously-specified paths.
+  *
+diff --git a/playmus.c b/playmus.c
+--- a/playmus.c
++++ b/playmus.c
+@@ -28,7 +28,7 @@
+ #include <stdio.h>
+ #include <string.h>
+ 
+-#ifdef unix
++#if defined(__unix__) || defined(__APPLE__)
+ #include <unistd.h>
+ #endif
+ 
+diff --git a/playwave.c b/playwave.c
+--- a/playwave.c
++++ b/playwave.c
+@@ -25,7 +25,7 @@
+ #include <stdio.h>
+ #include <string.h>
+ 
+-#ifdef unix
++#if defined(__unix__) || defined(__APPLE__)
+ #include <unistd.h>
+ #endif
+ 
+diff --git a/src/codecs/dr_libs/dr_flac.h b/src/codecs/dr_libs/dr_flac.h
+--- a/src/codecs/dr_libs/dr_flac.h
++++ b/src/codecs/dr_libs/dr_flac.h
+@@ -1,6 +1,6 @@
+ /*
+ FLAC audio decoder. Choice of public domain or MIT-0. See license statements at the end of this file.
+-dr_flac - v0.12.42 - 2023-11-02
++dr_flac - v0.13.2 - 2025-12-02
+ 
+ David Reid - mackron@gmail.com
+ 
+@@ -8,115 +8,6 @@
+ */
+ 
+ /*
+-RELEASE NOTES - v0.12.0
+-=======================
+-Version 0.12.0 has breaking API changes including changes to the existing API and the removal of deprecated APIs.
+-
+-
+-Improved Client-Defined Memory Allocation
+------------------------------------------
+-The main change with this release is the addition of a more flexible way of implementing custom memory allocation routines. The
+-existing system of DRFLAC_MALLOC, DRFLAC_REALLOC and DRFLAC_FREE are still in place and will be used by default when no custom
+-allocation callbacks are specified.
+-
+-To use the new system, you pass in a pointer to a drflac_allocation_callbacks object to drflac_open() and family, like this:
+-
+-    void* my_malloc(size_t sz, void* pUserData)
+-    {
+-        return malloc(sz);
+-    }
+-    void* my_realloc(void* p, size_t sz, void* pUserData)
+-    {
+-        return realloc(p, sz);
+-    }
+-    void my_free(void* p, void* pUserData)
+-    {
+-        free(p);
+-    }
+-
+-    ...
+-
+-    drflac_allocation_callbacks allocationCallbacks;
+-    allocationCallbacks.pUserData = &myData;
+-    allocationCallbacks.onMalloc  = my_malloc;
+-    allocationCallbacks.onRealloc = my_realloc;
+-    allocationCallbacks.onFree    = my_free;
+-    drflac* pFlac = drflac_open_file("my_file.flac", &allocationCallbacks);
+-
+-The advantage of this new system is that it allows you to specify user data which will be passed in to the allocation routines.
+-
+-Passing in null for the allocation callbacks object will cause dr_flac to use defaults which is the same as DRFLAC_MALLOC,
+-DRFLAC_REALLOC and DRFLAC_FREE and the equivalent of how it worked in previous versions.
+-
+-Every API that opens a drflac object now takes this extra parameter. These include the following:
+-
+-    drflac_open()
+-    drflac_open_relaxed()
+-    drflac_open_with_metadata()
+-    drflac_open_with_metadata_relaxed()
+-    drflac_open_file()
+-    drflac_open_file_with_metadata()
+-    drflac_open_memory()
+-    drflac_open_memory_with_metadata()
+-    drflac_open_and_read_pcm_frames_s32()
+-    drflac_open_and_read_pcm_frames_s16()
+-    drflac_open_and_read_pcm_frames_f32()
+-    drflac_open_file_and_read_pcm_frames_s32()
+-    drflac_open_file_and_read_pcm_frames_s16()
+-    drflac_open_file_and_read_pcm_frames_f32()
+-    drflac_open_memory_and_read_pcm_frames_s32()
+-    drflac_open_memory_and_read_pcm_frames_s16()
+-    drflac_open_memory_and_read_pcm_frames_f32()
+-
+-
+-
+-Optimizations
+--------------
+-Seeking performance has been greatly improved. A new binary search based seeking algorithm has been introduced which significantly
+-improves performance over the brute force method which was used when no seek table was present. Seek table based seeking also takes
+-advantage of the new binary search seeking system to further improve performance there as well. Note that this depends on CRC which
+-means it will be disabled when DR_FLAC_NO_CRC is used.
+-
+-The SSE4.1 pipeline has been cleaned up and optimized. You should see some improvements with decoding speed of 24-bit files in
+-particular. 16-bit streams should also see some improvement.
+-
+-drflac_read_pcm_frames_s16() has been optimized. Previously this sat on top of drflac_read_pcm_frames_s32() and performed it's s32
+-to s16 conversion in a second pass. This is now all done in a single pass. This includes SSE2 and ARM NEON optimized paths.
+-
+-A minor optimization has been implemented for drflac_read_pcm_frames_s32(). This will now use an SSE2 optimized pipeline for stereo
+-channel reconstruction which is the last part of the decoding process.
+-
+-The ARM build has seen a few improvements. The CLZ (count leading zeroes) and REV (byte swap) instructions are now used when
+-compiling with GCC and Clang which is achieved using inline assembly. The CLZ instruction requires ARM architecture version 5 at
+-compile time and the REV instruction requires ARM architecture version 6.
+-
+-An ARM NEON optimized pipeline has been implemented. To enable this you'll need to add -mfpu=neon to the command line when compiling.
+-
+-
+-Removed APIs
+-------------
+-The following APIs were deprecated in version 0.11.0 and have been completely removed in version 0.12.0:
+-
+-    drflac_read_s32()                   -> drflac_read_pcm_frames_s32()
+-    drflac_read_s16()                   -> drflac_read_pcm_frames_s16()
+-    drflac_read_f32()                   -> drflac_read_pcm_frames_f32()
+-    drflac_seek_to_sample()             -> drflac_seek_to_pcm_frame()
+-    drflac_open_and_decode_s32()        -> drflac_open_and_read_pcm_frames_s32()
+-    drflac_open_and_decode_s16()        -> drflac_open_and_read_pcm_frames_s16()
+-    drflac_open_and_decode_f32()        -> drflac_open_and_read_pcm_frames_f32()
+-    drflac_open_and_decode_file_s32()   -> drflac_open_file_and_read_pcm_frames_s32()
+-    drflac_open_and_decode_file_s16()   -> drflac_open_file_and_read_pcm_frames_s16()
+-    drflac_open_and_decode_file_f32()   -> drflac_open_file_and_read_pcm_frames_f32()
+-    drflac_open_and_decode_memory_s32() -> drflac_open_memory_and_read_pcm_frames_s32()
+-    drflac_open_and_decode_memory_s16() -> drflac_open_memory_and_read_pcm_frames_s16()
+-    drflac_open_and_decode_memory_f32() -> drflac_open_memroy_and_read_pcm_frames_f32()
+-
+-Prior versions of dr_flac operated on a per-sample basis whereas now it operates on PCM frames. The removed APIs all relate
+-to the old per-sample APIs. You now need to use the "pcm_frame" versions.
+-*/
+-
+-
+-/*
+ Introduction
+ ============
+ dr_flac is a single file library. To use it, do something like the following in one .c file.
+@@ -179,7 +70,7 @@
+ 
+ The main opening APIs (`drflac_open()`, etc.) will fail if the header is not present. The presents a problem in certain scenarios such as broadcast style
+ streams or internet radio where the header may not be present because the user has started playback mid-stream. To handle this, use the relaxed APIs:
+-    
++
+     `drflac_open_relaxed()`
+     `drflac_open_with_metadata_relaxed()`
+ 
+@@ -234,8 +125,8 @@
+ #define DRFLAC_XSTRINGIFY(x)     DRFLAC_STRINGIFY(x)
+ 
+ #define DRFLAC_VERSION_MAJOR     0
+-#define DRFLAC_VERSION_MINOR     12
+-#define DRFLAC_VERSION_REVISION  42
++#define DRFLAC_VERSION_MINOR     13
++#define DRFLAC_VERSION_REVISION  2
+ #define DRFLAC_VERSION_STRING    DRFLAC_XSTRINGIFY(DRFLAC_VERSION_MAJOR) "." DRFLAC_XSTRINGIFY(DRFLAC_VERSION_MINOR) "." DRFLAC_XSTRINGIFY(DRFLAC_VERSION_REVISION)
+ 
+ #include <stddef.h> /* For size_t. */
+@@ -348,11 +239,11 @@
+ #define DRFLAC_64BIT
+ #endif
+ 
+-#if defined(__x86_64__) || defined(_M_X64)
++#if defined(__x86_64__) || (defined(_M_X64) && !defined(_M_ARM64EC))
+     #define DRFLAC_X64
+ #elif defined(__i386) || defined(_M_IX86)
+     #define DRFLAC_X86
+-#elif defined(__arm__) || defined(_M_ARM) || defined(__arm64) || defined(__arm64__) || defined(__aarch64__) || defined(_M_ARM64)
++#elif defined(__arm__) || defined(_M_ARM) || defined(__arm64) || defined(__arm64__) || defined(__aarch64__) || defined(_M_ARM64) || defined(_M_ARM64EC)
+     #define DRFLAC_ARM
+ #endif
+ /* End Architecture Detection */
+@@ -406,8 +297,9 @@
+ 
+ typedef enum
+ {
+-    drflac_seek_origin_start,
+-    drflac_seek_origin_current
++    DRFLAC_SEEK_SET,
++    DRFLAC_SEEK_CUR,
++    DRFLAC_SEEK_END
+ } drflac_seek_origin;
+ 
+ /* The order of members in this structure is important because we map this directly to the raw data within the SEEKTABLE metadata block. */
+@@ -439,6 +331,12 @@
+     */
+     drflac_uint32 type;
+ 
++    /* The size in bytes of the block and the buffer pointed to by pRawData if it's non-NULL. */
++    drflac_uint32 rawDataSize;
++
++    /* The offset in the stream of the raw data. */
++    drflac_uint64 rawDataOffset;
++
+     /*
+     A pointer to the raw data. This points to a temporary buffer so don't hold on to it. It's best to
+     not modify the contents of this buffer. Use the structures below for more meaningful and structured
+@@ -446,9 +344,6 @@
+     */
+     const void* pRawData;
+ 
+-    /* The size in bytes of the block and the buffer pointed to by pRawData if it's non-NULL. */
+-    drflac_uint32 rawDataSize;
+-
+     union
+     {
+         drflac_streaminfo streaminfo;
+@@ -500,6 +395,7 @@
+             drflac_uint32 colorDepth;
+             drflac_uint32 indexColorCount;
+             drflac_uint32 pictureDataSize;
++            drflac_uint64 pictureDataOffset;  /* Offset from the start of the stream. */
+             const drflac_uint8* pPictureData;
+         } picture;
+     } data;
+@@ -547,7 +443,7 @@
+     The number of bytes to move, relative to the origin. Will never be negative.
+ 
+ origin (in)
+-    The origin of the seek - the current position or the start of the stream.
++    The origin of the seek - the current position, the start of the stream, or the end of the stream.
+ 
+ 
+ Return Value
+@@ -557,8 +453,7 @@
+ 
+ Remarks
+ -------
+-The offset will never be negative. Whether or not it is relative to the beginning or current position is determined by the "origin" parameter which will be
+-either drflac_seek_origin_start or drflac_seek_origin_current.
++Seeking relative to the start and the current position must always be supported. If seeking from the end of the stream is not supported, return DRFLAC_FALSE.
+ 
+ When seeking to a PCM frame using drflac_seek_to_pcm_frame(), dr_flac may call this with an offset beyond the end of the FLAC stream. This needs to be detected
+ and handled by returning DRFLAC_FALSE.
+@@ -566,6 +461,25 @@
+ typedef drflac_bool32 (* drflac_seek_proc)(void* pUserData, int offset, drflac_seek_origin origin);
+ 
+ /*
++Callback for when the current position in the stream needs to be retrieved.
++
++
++Parameters
++----------
++pUserData (in)
++    The user data that was passed to drflac_open() and family.
++
++pCursor (out)
++    A pointer to a variable to receive the current position in the stream.
++
++
++Return Value
++------------
++Whether or not the operation was successful.
++*/
++typedef drflac_bool32 (* drflac_tell_proc)(void* pUserData, drflac_int64* pCursor);
++
++/*
+ Callback for when a metadata block is read.
+ 
+ 
+@@ -603,6 +517,9 @@
+     /* The function to call when the current read position needs to be moved. */
+     drflac_seek_proc onSeek;
+ 
++    /* The function to call when the current read position needs to be retrieved. */
++    drflac_tell_proc onTell;
++
+     /* The user data to pass around to onRead and onSeek. */
+     void* pUserData;
+ 
+@@ -828,7 +745,7 @@
+ drflac_open_with_metadata()
+ drflac_close()
+ */
+-DRFLAC_API drflac* drflac_open(drflac_read_proc onRead, drflac_seek_proc onSeek, void* pUserData, const drflac_allocation_callbacks* pAllocationCallbacks);
++DRFLAC_API drflac* drflac_open(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_tell_proc onTell, void* pUserData, const drflac_allocation_callbacks* pAllocationCallbacks);
+ 
+ /*
+ Opens a FLAC stream with relaxed validation of the header block.
+@@ -869,7 +786,7 @@
+ 
+ Use `drflac_open_with_metadata_relaxed()` if you need access to metadata.
+ */
+-DRFLAC_API drflac* drflac_open_relaxed(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_container container, void* pUserData, const drflac_allocation_callbacks* pAllocationCallbacks);
++DRFLAC_API drflac* drflac_open_relaxed(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_tell_proc onTell, drflac_container container, void* pUserData, const drflac_allocation_callbacks* pAllocationCallbacks);
+ 
+ /*
+ Opens a FLAC decoder and notifies the caller of the metadata chunks (album art, etc.).
+@@ -926,7 +843,7 @@
+ drflac_open()
+ drflac_close()
+ */
+-DRFLAC_API drflac* drflac_open_with_metadata(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_meta_proc onMeta, void* pUserData, const drflac_allocation_callbacks* pAllocationCallbacks);
++DRFLAC_API drflac* drflac_open_with_metadata(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_tell_proc onTell, drflac_meta_proc onMeta, void* pUserData, const drflac_allocation_callbacks* pAllocationCallbacks);
+ 
+ /*
+ The same as drflac_open_with_metadata(), except attempts to open the stream even when a header block is not present.
+@@ -936,7 +853,7 @@
+ drflac_open_with_metadata()
+ drflac_open_relaxed()
+ */
+-DRFLAC_API drflac* drflac_open_with_metadata_relaxed(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_meta_proc onMeta, drflac_container container, void* pUserData, const drflac_allocation_callbacks* pAllocationCallbacks);
++DRFLAC_API drflac* drflac_open_with_metadata_relaxed(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_tell_proc onTell, drflac_meta_proc onMeta, drflac_container container, void* pUserData, const drflac_allocation_callbacks* pAllocationCallbacks);
+ 
+ /*
+ Closes the given FLAC decoder.
+@@ -1234,13 +1151,13 @@
+ 
+ Do not call this function on a broadcast type of stream (like internet radio streams and whatnot).
+ */
+-DRFLAC_API drflac_int32* drflac_open_and_read_pcm_frames_s32(drflac_read_proc onRead, drflac_seek_proc onSeek, void* pUserData, unsigned int* channels, unsigned int* sampleRate, drflac_uint64* totalPCMFrameCount, const drflac_allocation_callbacks* pAllocationCallbacks);
++DRFLAC_API drflac_int32* drflac_open_and_read_pcm_frames_s32(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_tell_proc onTell, void* pUserData, unsigned int* channels, unsigned int* sampleRate, drflac_uint64* totalPCMFrameCount, const drflac_allocation_callbacks* pAllocationCallbacks);
+ 
+ /* Same as drflac_open_and_read_pcm_frames_s32(), except returns signed 16-bit integer samples. */
+-DRFLAC_API drflac_int16* drflac_open_and_read_pcm_frames_s16(drflac_read_proc onRead, drflac_seek_proc onSeek, void* pUserData, unsigned int* channels, unsigned int* sampleRate, drflac_uint64* totalPCMFrameCount, const drflac_allocation_callbacks* pAllocationCallbacks);
++DRFLAC_API drflac_int16* drflac_open_and_read_pcm_frames_s16(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_tell_proc onTell, void* pUserData, unsigned int* channels, unsigned int* sampleRate, drflac_uint64* totalPCMFrameCount, const drflac_allocation_callbacks* pAllocationCallbacks);
+ 
+ /* Same as drflac_open_and_read_pcm_frames_s32(), except returns 32-bit floating-point samples. */
+-DRFLAC_API float* drflac_open_and_read_pcm_frames_f32(drflac_read_proc onRead, drflac_seek_proc onSeek, void* pUserData, unsigned int* channels, unsigned int* sampleRate, drflac_uint64* totalPCMFrameCount, const drflac_allocation_callbacks* pAllocationCallbacks);
++DRFLAC_API float* drflac_open_and_read_pcm_frames_f32(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_tell_proc onTell, void* pUserData, unsigned int* channels, unsigned int* sampleRate, drflac_uint64* totalPCMFrameCount, const drflac_allocation_callbacks* pAllocationCallbacks);
+ 
+ #ifndef DR_FLAC_NO_STDIO
+ /* Same as drflac_open_and_read_pcm_frames_s32() except opens the decoder from a file. */
+@@ -2815,7 +2732,7 @@
+ 
+                 return r;
+             }
+-        #elif defined(DRFLAC_ARM) && (defined(__ARM_ARCH) && __ARM_ARCH >= 5) && !defined(__ARM_ARCH_6M__) && !defined(DRFLAC_64BIT)   /* <-- I haven't tested 64-bit inline assembly, so only enabling this for the 32-bit build for now. */
++        #elif defined(DRFLAC_ARM) && (defined(__ARM_ARCH) && __ARM_ARCH >= 5) && !defined(__ARM_ARCH_6M__) && !(defined(__thumb__) && !defined(__thumb2__)) && !defined(DRFLAC_64BIT)   /* <-- I haven't tested 64-bit inline assembly, so only enabling this for the 32-bit build for now. */
+             {
+                 unsigned int r;
+                 __asm__ __volatile__ (
+@@ -2960,25 +2877,25 @@
+     */
+     if (offsetFromStart > 0x7FFFFFFF) {
+         drflac_uint64 bytesRemaining = offsetFromStart;
+-        if (!bs->onSeek(bs->pUserData, 0x7FFFFFFF, drflac_seek_origin_start)) {
++        if (!bs->onSeek(bs->pUserData, 0x7FFFFFFF, DRFLAC_SEEK_SET)) {
+             return DRFLAC_FALSE;
+         }
+         bytesRemaining -= 0x7FFFFFFF;
+ 
+         while (bytesRemaining > 0x7FFFFFFF) {
+-            if (!bs->onSeek(bs->pUserData, 0x7FFFFFFF, drflac_seek_origin_current)) {
++            if (!bs->onSeek(bs->pUserData, 0x7FFFFFFF, DRFLAC_SEEK_CUR)) {
+                 return DRFLAC_FALSE;
+             }
+             bytesRemaining -= 0x7FFFFFFF;
+         }
+ 
+         if (bytesRemaining > 0) {
+-            if (!bs->onSeek(bs->pUserData, (int)bytesRemaining, drflac_seek_origin_current)) {
++            if (!bs->onSeek(bs->pUserData, (int)bytesRemaining, DRFLAC_SEEK_CUR)) {
+                 return DRFLAC_FALSE;
+             }
+         }
+     } else {
+-        if (!bs->onSeek(bs->pUserData, (int)offsetFromStart, drflac_seek_origin_start)) {
++        if (!bs->onSeek(bs->pUserData, (int)offsetFromStart, DRFLAC_SEEK_SET)) {
+             return DRFLAC_FALSE;
+         }
+     }
+@@ -5393,6 +5310,12 @@
+         return DRFLAC_FALSE;
+     }
+ 
++    /*
++    Default to 0 for the LPC order. It's important that we always set this to 0 for non LPC
++    and FIXED subframes because we'll be using it in a generic validation check later.
++    */
++    pSubframe->lpcOrder = 0;
++
+     type = (header & 0x7E) >> 1;
+     if (type == 0) {
+         pSubframe->subframeType = DRFLAC_SUBFRAME_CONSTANT;
+@@ -5465,6 +5388,18 @@
+ 
+     pSubframe->pSamplesS32 = pDecodedSamplesOut;
+ 
++    /*
++    pDecodedSamplesOut will be pointing to a buffer that was allocated with enough memory to store
++    maxBlockSizeInPCMFrames samples (as specified in the FLAC header). We need to guard against an
++    overflow here. At a higher level we are checking maxBlockSizeInPCMFrames from the header, but
++    here we need to do an additional check to ensure this frame's block size fully encompasses any
++    warmup samples which is determined by the LPC order. For non LPC and FIXED subframes, the LPC
++    order will be have been set to 0 in drflac__read_subframe_header().
++    */
++    if (frame->header.blockSizeInPCMFrames < pSubframe->lpcOrder) {
++        return DRFLAC_FALSE;
++    }
++
+     switch (pSubframe->subframeType)
+     {
+         case DRFLAC_SUBFRAME_CONSTANT:
+@@ -6312,6 +6247,7 @@
+ {
+     drflac_read_proc onRead;
+     drflac_seek_proc onSeek;
++    drflac_tell_proc onTell;
+     drflac_meta_proc onMeta;
+     drflac_container container;
+     void* pUserData;
+@@ -6479,7 +6415,7 @@
+ }
+ 
+ 
+-static drflac_bool32 drflac__read_and_decode_metadata(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_meta_proc onMeta, void* pUserData, void* pUserDataMD, drflac_uint64* pFirstFramePos, drflac_uint64* pSeektablePos, drflac_uint32* pSeekpointCount, drflac_allocation_callbacks* pAllocationCallbacks)
++static drflac_bool32 drflac__read_and_decode_metadata(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_tell_proc onTell, drflac_meta_proc onMeta, void* pUserData, void* pUserDataMD, drflac_uint64* pFirstFramePos, drflac_uint64* pSeektablePos, drflac_uint32* pSeekpointCount, drflac_allocation_callbacks* pAllocationCallbacks)
+ {
+     /*
+     We want to keep track of the byte position in the stream of the seektable. At the time of calling this function we know that
+@@ -6489,6 +6425,8 @@
+     drflac_uint64 seektablePos   = 0;
+     drflac_uint32 seektableSize  = 0;
+ 
++    (void)onTell;
++
+     for (;;) {
+         drflac_metadata metadata;
+         drflac_uint8 isLastBlock = 0;
+@@ -6500,8 +6438,9 @@
+         runningFilePos += 4;
+ 
+         metadata.type = blockType;
++        metadata.rawDataSize = 0;
++        metadata.rawDataOffset = runningFilePos;
+         metadata.pRawData = NULL;
+-        metadata.rawDataSize = 0;
+ 
+         switch (blockType)
+         {
+@@ -6702,10 +6641,10 @@
+ 
+                             /* Skip to the index point count */
+                             pRunningData += 35;
+-                            
++
+                             indexCount = pRunningData[0];
+                             pRunningData += 1;
+-                            
++
+                             bufferSize += indexCount * sizeof(drflac_cuesheet_track_index);
+ 
+                             /* Quick validation check. */
+@@ -6778,59 +6717,149 @@
+                 }
+ 
+                 if (onMeta) {
+-                    void* pRawData;
+-                    const char* pRunningData;
+-                    const char* pRunningDataEnd;
+-
+-                    pRawData = drflac__malloc_from_callbacks(blockSize, pAllocationCallbacks);
+-                    if (pRawData == NULL) {
+-                        return DRFLAC_FALSE;
++                    drflac_bool32 result = DRFLAC_TRUE;
++                    drflac_uint32 blockSizeRemaining = blockSize;
++                    char* pMime = NULL;
++                    char* pDescription = NULL;
++                    void* pPictureData = NULL;
++
++                    if (blockSizeRemaining < 4 || onRead(pUserData, &metadata.data.picture.type, 4) != 4) {
++                        result = DRFLAC_FALSE;
++                        goto done_flac;
++                    }
++                    blockSizeRemaining -= 4;
++                    metadata.data.picture.type = drflac__be2host_32(metadata.data.picture.type);
++
++
++                    if (blockSizeRemaining < 4 || onRead(pUserData, &metadata.data.picture.mimeLength, 4) != 4) {
++                        result = DRFLAC_FALSE;
++                        goto done_flac;
++                    }
++                    blockSizeRemaining -= 4;
++                    metadata.data.picture.mimeLength = drflac__be2host_32(metadata.data.picture.mimeLength);
++
++                    pMime = (char*)drflac__malloc_from_callbacks(metadata.data.picture.mimeLength + 1, pAllocationCallbacks); /* +1 for null terminator. */
++                    if (pMime == NULL) {
++                        result = DRFLAC_FALSE;
++                        goto done_flac;
++                    }
++
++                    if (blockSizeRemaining < metadata.data.picture.mimeLength || onRead(pUserData, pMime, metadata.data.picture.mimeLength) != metadata.data.picture.mimeLength) {
++                        result = DRFLAC_FALSE;
++                        goto done_flac;
++                    }
++                    blockSizeRemaining -= metadata.data.picture.mimeLength;
++                    pMime[metadata.data.picture.mimeLength] = '\0';  /* Null terminate for safety. */
++                    metadata.data.picture.mime = (const char*)pMime;
++
++
++                    if (blockSizeRemaining < 4 || onRead(pUserData, &metadata.data.picture.descriptionLength, 4) != 4) {
++                        result = DRFLAC_FALSE;
++                        goto done_flac;
++                    }
++                    blockSizeRemaining -= 4;
++                    metadata.data.picture.descriptionLength = drflac__be2host_32(metadata.data.picture.descriptionLength);
++
++                    pDescription = (char*)drflac__malloc_from_callbacks(metadata.data.picture.descriptionLength + 1, pAllocationCallbacks); /* +1 for null terminator. */
++                    if (pDescription == NULL) {
++                        result = DRFLAC_FALSE;
++                        goto done_flac;
++                    }
++
++                    if (blockSizeRemaining < metadata.data.picture.descriptionLength || onRead(pUserData, pDescription, metadata.data.picture.descriptionLength) != metadata.data.picture.descriptionLength) {
++                        result = DRFLAC_FALSE;
++                        goto done_flac;
++                    }
++                    blockSizeRemaining -= metadata.data.picture.descriptionLength;
++                    pDescription[metadata.data.picture.descriptionLength] = '\0';  /* Null terminate for safety. */
++                    metadata.data.picture.description = (const char*)pDescription;
++
++
++                    if (blockSizeRemaining < 4 || onRead(pUserData, &metadata.data.picture.width, 4) != 4) {
++                        result = DRFLAC_FALSE;
++                        goto done_flac;
++                    }
++                    blockSizeRemaining -= 4;
++                    metadata.data.picture.width = drflac__be2host_32(metadata.data.picture.width);
++
++                    if (blockSizeRemaining < 4 || onRead(pUserData, &metadata.data.picture.height, 4) != 4) {
++                        result = DRFLAC_FALSE;
++                        goto done_flac;
+                     }
+-
+-                    if (onRead(pUserData, pRawData, blockSize) != blockSize) {
+-                        drflac__free_from_callbacks(pRawData, pAllocationCallbacks);
++                    blockSizeRemaining -= 4;
++                    metadata.data.picture.height = drflac__be2host_32(metadata.data.picture.height);
++
++                    if (blockSizeRemaining < 4 || onRead(pUserData, &metadata.data.picture.colorDepth, 4) != 4) {
++                        result = DRFLAC_FALSE;
++                        goto done_flac;
++                    }
++                    blockSizeRemaining -= 4;
++                    metadata.data.picture.colorDepth = drflac__be2host_32(metadata.data.picture.colorDepth);
++
++                    if (blockSizeRemaining < 4 || onRead(pUserData, &metadata.data.picture.indexColorCount, 4) != 4) {
++                        result = DRFLAC_FALSE;
++                        goto done_flac;
++                    }
++                    blockSizeRemaining -= 4;
++                    metadata.data.picture.indexColorCount = drflac__be2host_32(metadata.data.picture.indexColorCount);
++
++
++                    /* Picture data. */
++                    if (blockSizeRemaining < 4 || onRead(pUserData, &metadata.data.picture.pictureDataSize, 4) != 4) {
++                        result = DRFLAC_FALSE;
++                        goto done_flac;
++                    }
++                    blockSizeRemaining -= 4;
++                    metadata.data.picture.pictureDataSize = drflac__be2host_32(metadata.data.picture.pictureDataSize);
++
++                    if (blockSizeRemaining < metadata.data.picture.pictureDataSize) {
++                        result = DRFLAC_FALSE;
++                        goto done_flac;
++                    }
++
++                    /* For the actual image data we want to store the offset to the start of the stream. */
++                    metadata.data.picture.pictureDataOffset = runningFilePos + (blockSize - blockSizeRemaining);
++
++                    /*
++                    For the allocation of image data, we can allow memory allocation to fail, in which case we just leave
++                    the pointer as null. If it fails, we need to fall back to seeking past the image data.
++                    */
++                #ifndef DR_FLAC_NO_PICTURE_METADATA_MALLOC
++                    pPictureData = drflac__malloc_from_callbacks(metadata.data.picture.pictureDataSize, pAllocationCallbacks);
++                    if (pPictureData != NULL) {
++                        if (onRead(pUserData, pPictureData, metadata.data.picture.pictureDataSize) != metadata.data.picture.pictureDataSize) {
++                            result = DRFLAC_FALSE;
++                            goto done_flac;
++                        }
++                    } else
++                #endif
++                    {
++                        /* Allocation failed. We need to seek past the picture data. */
++                        if (!onSeek(pUserData, metadata.data.picture.pictureDataSize, DRFLAC_SEEK_CUR)) {
++                            result = DRFLAC_FALSE;
++                            goto done_flac;
++                        }
++                    }
++
++                    blockSizeRemaining -= metadata.data.picture.pictureDataSize;
++                    metadata.data.picture.pPictureData = (const drflac_uint8*)pPictureData;
++
++
++                    /* Only fire the callback if we actually have a way to read the image data. We must have either a valid offset, or a valid data pointer. */
++                    if (metadata.data.picture.pictureDataOffset != 0 || metadata.data.picture.pPictureData != NULL) {
++                        onMeta(pUserDataMD, &metadata);
++                    } else {
++                        /* Don't have a valid offset or data pointer, so just pretend we don't have a picture metadata. */
++                    }
++
++                done_flac:
++                    drflac__free_from_callbacks(pMime,        pAllocationCallbacks);
++                    drflac__free_from_callbacks(pDescription, pAllocationCallbacks);
++                    drflac__free_from_callbacks(pPictureData, pAllocationCallbacks);
++
++                    if (result != DRFLAC_TRUE) {
+                         return DRFLAC_FALSE;
+                     }
+-
+-                    metadata.pRawData = pRawData;
+-                    metadata.rawDataSize = blockSize;
+-
+-                    pRunningData    = (const char*)pRawData;
+-                    pRunningDataEnd = (const char*)pRawData + blockSize;
+-
+-                    metadata.data.picture.type       = drflac__be2host_32_ptr_unaligned(pRunningData); pRunningData += 4;
+-                    metadata.data.picture.mimeLength = drflac__be2host_32_ptr_unaligned(pRunningData); pRunningData += 4;
+-
+-                    /* Need space for the rest of the block */
+-                    if ((pRunningDataEnd - pRunningData) - 24 < (drflac_int64)metadata.data.picture.mimeLength) { /* <-- Note the order of operations to avoid overflow to a valid value */
+-                        drflac__free_from_callbacks(pRawData, pAllocationCallbacks);
+-                        return DRFLAC_FALSE;
+-                    }
+-                    metadata.data.picture.mime              = pRunningData;                                   pRunningData += metadata.data.picture.mimeLength;
+-                    metadata.data.picture.descriptionLength = drflac__be2host_32_ptr_unaligned(pRunningData); pRunningData += 4;
+-
+-                    /* Need space for the rest of the block */
+-                    if ((pRunningDataEnd - pRunningData) - 20 < (drflac_int64)metadata.data.picture.descriptionLength) { /* <-- Note the order of operations to avoid overflow to a valid value */
+-                        drflac__free_from_callbacks(pRawData, pAllocationCallbacks);
+-                        return DRFLAC_FALSE;
+-                    }
+-                    metadata.data.picture.description     = pRunningData;                                   pRunningData += metadata.data.picture.descriptionLength;
+-                    metadata.data.picture.width           = drflac__be2host_32_ptr_unaligned(pRunningData); pRunningData += 4;
+-                    metadata.data.picture.height          = drflac__be2host_32_ptr_unaligned(pRunningData); pRunningData += 4;
+-                    metadata.data.picture.colorDepth      = drflac__be2host_32_ptr_unaligned(pRunningData); pRunningData += 4;
+-                    metadata.data.picture.indexColorCount = drflac__be2host_32_ptr_unaligned(pRunningData); pRunningData += 4;
+-                    metadata.data.picture.pictureDataSize = drflac__be2host_32_ptr_unaligned(pRunningData); pRunningData += 4;
+-                    metadata.data.picture.pPictureData    = (const drflac_uint8*)pRunningData;
+-
+-                    /* Need space for the picture after the block */
+-                    if (pRunningDataEnd - pRunningData < (drflac_int64)metadata.data.picture.pictureDataSize) { /* <-- Note the order of operations to avoid overflow to a valid value */
+-                        drflac__free_from_callbacks(pRawData, pAllocationCallbacks);
+-                        return DRFLAC_FALSE;
+-                    }
+-
+-                    onMeta(pUserDataMD, &metadata);
+-
+-                    drflac__free_from_callbacks(pRawData, pAllocationCallbacks);
+                 }
+             } break;
+ 
+@@ -6840,7 +6869,7 @@
+                     metadata.data.padding.unused = 0;
+ 
+                     /* Padding doesn't have anything meaningful in it, so just skip over it, but make sure the caller is aware of it by firing the callback. */
+-                    if (!onSeek(pUserData, blockSize, drflac_seek_origin_current)) {
++                    if (!onSeek(pUserData, blockSize, DRFLAC_SEEK_CUR)) {
+                         isLastBlock = DRFLAC_TRUE;  /* An error occurred while seeking. Attempt to recover by treating this as the last block which will in turn terminate the loop. */
+                     } else {
+                         onMeta(pUserDataMD, &metadata);
+@@ -6852,7 +6881,7 @@
+             {
+                 /* Invalid chunk. Just skip over this one. */
+                 if (onMeta) {
+-                    if (!onSeek(pUserData, blockSize, drflac_seek_origin_current)) {
++                    if (!onSeek(pUserData, blockSize, DRFLAC_SEEK_CUR)) {
+                         isLastBlock = DRFLAC_TRUE;  /* An error occurred while seeking. Attempt to recover by treating this as the last block which will in turn terminate the loop. */
+                     }
+                 }
+@@ -6866,13 +6895,16 @@
+                 */
+                 if (onMeta) {
+                     void* pRawData = drflac__malloc_from_callbacks(blockSize, pAllocationCallbacks);
+-                    if (pRawData == NULL) {
+-                        return DRFLAC_FALSE;
+-                    }
+-
+-                    if (onRead(pUserData, pRawData, blockSize) != blockSize) {
+-                        drflac__free_from_callbacks(pRawData, pAllocationCallbacks);
+-                        return DRFLAC_FALSE;
++                    if (pRawData != NULL) {
++                        if (onRead(pUserData, pRawData, blockSize) != blockSize) {
++                            drflac__free_from_callbacks(pRawData, pAllocationCallbacks);
++                            return DRFLAC_FALSE;
++                        }
++                    } else {
++                        /* Allocation failed. We need to seek past the block. */
++                        if (!onSeek(pUserData, blockSize, DRFLAC_SEEK_CUR)) {
++                            return DRFLAC_FALSE;
++                        }
+                     }
+ 
+                     metadata.pRawData = pRawData;
+@@ -6886,7 +6918,7 @@
+ 
+         /* If we're not handling metadata, just skip over the block. If we are, it will have been handled earlier in the switch statement above. */
+         if (onMeta == NULL && blockSize > 0) {
+-            if (!onSeek(pUserData, blockSize, drflac_seek_origin_current)) {
++            if (!onSeek(pUserData, blockSize, DRFLAC_SEEK_CUR)) {
+                 isLastBlock = DRFLAC_TRUE;
+             }
+         }
+@@ -7220,6 +7252,7 @@
+ {
+     drflac_read_proc onRead;                /* The original onRead callback from drflac_open() and family. */
+     drflac_seek_proc onSeek;                /* The original onSeek callback from drflac_open() and family. */
++    drflac_tell_proc onTell;                /* The original onTell callback from drflac_open() and family. */
+     void* pUserData;                        /* The user data passed on onRead and onSeek. This is the user data that was passed on drflac_open() and family. */
+     drflac_uint64 currentBytePos;           /* The position of the byte we are sitting on in the physical byte stream. Used for efficient seeking. */
+     drflac_uint64 firstBytePos;             /* The position of the first byte in the physical bitstream. Points to the start of the "OggS" identifier of the FLAC bos page. */
+@@ -7241,32 +7274,32 @@
+ 
+ static drflac_bool32 drflac_oggbs__seek_physical(drflac_oggbs* oggbs, drflac_uint64 offset, drflac_seek_origin origin)
+ {
+-    if (origin == drflac_seek_origin_start) {
++    if (origin == DRFLAC_SEEK_SET) {
+         if (offset <= 0x7FFFFFFF) {
+-            if (!oggbs->onSeek(oggbs->pUserData, (int)offset, drflac_seek_origin_start)) {
++            if (!oggbs->onSeek(oggbs->pUserData, (int)offset, DRFLAC_SEEK_SET)) {
+                 return DRFLAC_FALSE;
+             }
+             oggbs->currentBytePos = offset;
+ 
+             return DRFLAC_TRUE;
+         } else {
+-            if (!oggbs->onSeek(oggbs->pUserData, 0x7FFFFFFF, drflac_seek_origin_start)) {
++            if (!oggbs->onSeek(oggbs->pUserData, 0x7FFFFFFF, DRFLAC_SEEK_SET)) {
+                 return DRFLAC_FALSE;
+             }
+             oggbs->currentBytePos = offset;
+ 
+-            return drflac_oggbs__seek_physical(oggbs, offset - 0x7FFFFFFF, drflac_seek_origin_current);
++            return drflac_oggbs__seek_physical(oggbs, offset - 0x7FFFFFFF, DRFLAC_SEEK_CUR);
+         }
+     } else {
+         while (offset > 0x7FFFFFFF) {
+-            if (!oggbs->onSeek(oggbs->pUserData, 0x7FFFFFFF, drflac_seek_origin_current)) {
++            if (!oggbs->onSeek(oggbs->pUserData, 0x7FFFFFFF, DRFLAC_SEEK_CUR)) {
+                 return DRFLAC_FALSE;
+             }
+             oggbs->currentBytePos += 0x7FFFFFFF;
+             offset -= 0x7FFFFFFF;
+         }
+ 
+-        if (!oggbs->onSeek(oggbs->pUserData, (int)offset, drflac_seek_origin_current)) {    /* <-- Safe cast thanks to the loop above. */
++        if (!oggbs->onSeek(oggbs->pUserData, (int)offset, DRFLAC_SEEK_CUR)) {    /* <-- Safe cast thanks to the loop above. */
+             return DRFLAC_FALSE;
+         }
+         oggbs->currentBytePos += offset;
+@@ -7298,7 +7331,7 @@
+ 
+         if (header.serialNumber != oggbs->serialNumber) {
+             /* It's not a FLAC page. Skip it. */
+-            if (pageBodySize > 0 && !drflac_oggbs__seek_physical(oggbs, pageBodySize, drflac_seek_origin_current)) {
++            if (pageBodySize > 0 && !drflac_oggbs__seek_physical(oggbs, pageBodySize, DRFLAC_SEEK_CUR)) {
+                 return DRFLAC_FALSE;
+             }
+             continue;
+@@ -7384,7 +7417,7 @@
+         At this point we will have found either the packet or the end of the page. If were at the end of the page we'll
+         want to load the next page and keep searching for the end of the packet.
+         */
+-        drflac_oggbs__seek_physical(oggbs, bytesToEndOfPacketOrPage, drflac_seek_origin_current);
++        drflac_oggbs__seek_physical(oggbs, bytesToEndOfPacketOrPage, DRFLAC_SEEK_CUR);
+         oggbs->bytesRemainingInPage -= bytesToEndOfPacketOrPage;
+ 
+         if (atEndOfPage) {
+@@ -7462,8 +7495,8 @@
+     DRFLAC_ASSERT(offset >= 0);  /* <-- Never seek backwards. */
+ 
+     /* Seeking is always forward which makes things a lot simpler. */
+-    if (origin == drflac_seek_origin_start) {
+-        if (!drflac_oggbs__seek_physical(oggbs, (int)oggbs->firstBytePos, drflac_seek_origin_start)) {
++    if (origin == DRFLAC_SEEK_SET) {
++        if (!drflac_oggbs__seek_physical(oggbs, (int)oggbs->firstBytePos, DRFLAC_SEEK_SET)) {
+             return DRFLAC_FALSE;
+         }
+ 
+@@ -7471,38 +7504,50 @@
+             return DRFLAC_FALSE;
+         }
+ 
+-        return drflac__on_seek_ogg(pUserData, offset, drflac_seek_origin_current);
+-    }
+-
+-    DRFLAC_ASSERT(origin == drflac_seek_origin_current);
+-
+-    while (bytesSeeked < offset) {
+-        int bytesRemainingToSeek = offset - bytesSeeked;
+-        DRFLAC_ASSERT(bytesRemainingToSeek >= 0);
+-
+-        if (oggbs->bytesRemainingInPage >= (size_t)bytesRemainingToSeek) {
+-            bytesSeeked += bytesRemainingToSeek;
+-            (void)bytesSeeked;  /* <-- Silence a dead store warning emitted by Clang Static Analyzer. */
+-            oggbs->bytesRemainingInPage -= bytesRemainingToSeek;
+-            break;
+-        }
+-
+-        /* If we get here it means some of the requested data is contained in the next pages. */
+-        if (oggbs->bytesRemainingInPage > 0) {
+-            bytesSeeked += (int)oggbs->bytesRemainingInPage;
+-            oggbs->bytesRemainingInPage = 0;
+-        }
+-
+-        DRFLAC_ASSERT(bytesRemainingToSeek > 0);
+-        if (!drflac_oggbs__goto_next_page(oggbs, drflac_ogg_fail_on_crc_mismatch)) {
+-            /* Failed to go to the next page. We either hit the end of the stream or had a CRC mismatch. */
+-            return DRFLAC_FALSE;
+-        }
++        return drflac__on_seek_ogg(pUserData, offset, DRFLAC_SEEK_CUR);
++    } else if (origin == DRFLAC_SEEK_CUR) {
++        while (bytesSeeked < offset) {
++            int bytesRemainingToSeek = offset - bytesSeeked;
++            DRFLAC_ASSERT(bytesRemainingToSeek >= 0);
++
++            if (oggbs->bytesRemainingInPage >= (size_t)bytesRemainingToSeek) {
++                bytesSeeked += bytesRemainingToSeek;
++                (void)bytesSeeked;  /* <-- Silence a dead store warning emitted by Clang Static Analyzer. */
++                oggbs->bytesRemainingInPage -= bytesRemainingToSeek;
++                break;
++            }
++
++            /* If we get here it means some of the requested data is contained in the next pages. */
++            if (oggbs->bytesRemainingInPage > 0) {
++                bytesSeeked += (int)oggbs->bytesRemainingInPage;
++                oggbs->bytesRemainingInPage = 0;
++            }
++
++            DRFLAC_ASSERT(bytesRemainingToSeek > 0);
++            if (!drflac_oggbs__goto_next_page(oggbs, drflac_ogg_fail_on_crc_mismatch)) {
++                /* Failed to go to the next page. We either hit the end of the stream or had a CRC mismatch. */
++                return DRFLAC_FALSE;
++            }
++        }
++    } else if (origin == DRFLAC_SEEK_END) {
++        /* Seeking to the end is not supported. */
++        return DRFLAC_FALSE;
+     }
+ 
+     return DRFLAC_TRUE;
+ }
+ 
++static drflac_bool32 drflac__on_tell_ogg(void* pUserData, drflac_int64* pCursor)
++{
++    /*
++    Not implemented for Ogg containers because we don't currently track the byte position of the logical bitstream. To support this, we'll need
++    to track the position in drflac__on_read_ogg and drflac__on_seek_ogg.
++    */
++    (void)pUserData;
++    (void)pCursor;
++    return DRFLAC_FALSE;
++}
++
+ 
+ static drflac_bool32 drflac_ogg__seek_to_pcm_frame(drflac* pFlac, drflac_uint64 pcmFrameIndex)
+ {
+@@ -7525,7 +7570,7 @@
+     runningGranulePosition = 0;
+     for (;;) {
+         if (!drflac_oggbs__goto_next_page(oggbs, drflac_ogg_recover_on_crc_mismatch)) {
+-            drflac_oggbs__seek_physical(oggbs, originalBytePos, drflac_seek_origin_start);
++            drflac_oggbs__seek_physical(oggbs, originalBytePos, DRFLAC_SEEK_SET);
+             return DRFLAC_FALSE;   /* Never did find that sample... */
+         }
+ 
+@@ -7559,7 +7604,7 @@
+     a new frame. This property means that after we've seeked to the page we can immediately start looping over frames until
+     we find the one containing the target sample.
+     */
+-    if (!drflac_oggbs__seek_physical(oggbs, runningFrameBytePos, drflac_seek_origin_start)) {
++    if (!drflac_oggbs__seek_physical(oggbs, runningFrameBytePos, DRFLAC_SEEK_SET)) {
+         return DRFLAC_FALSE;
+     }
+     if (!drflac_oggbs__goto_next_page(oggbs, drflac_ogg_recover_on_crc_mismatch)) {
+@@ -7726,7 +7771,7 @@
+                     The next 2 bytes are the non-audio packets, not including this one. We don't care about this because we're going to
+                     be handling it in a generic way based on the serial number and packet types.
+                     */
+-                    if (!onSeek(pUserData, 2, drflac_seek_origin_current)) {
++                    if (!onSeek(pUserData, 2, DRFLAC_SEEK_CUR)) {
+                         return DRFLAC_FALSE;
+                     }
+ 
+@@ -7783,18 +7828,18 @@
+                     }
+                 } else {
+                     /* Not a FLAC header. Skip it. */
+-                    if (!onSeek(pUserData, bytesRemainingInPage, drflac_seek_origin_current)) {
++                    if (!onSeek(pUserData, bytesRemainingInPage, DRFLAC_SEEK_CUR)) {
+                         return DRFLAC_FALSE;
+                     }
+                 }
+             } else {
+                 /* Not a FLAC header. Seek past the entire page and move on to the next. */
+-                if (!onSeek(pUserData, bytesRemainingInPage, drflac_seek_origin_current)) {
++                if (!onSeek(pUserData, bytesRemainingInPage, DRFLAC_SEEK_CUR)) {
+                     return DRFLAC_FALSE;
+                 }
+             }
+         } else {
+-            if (!onSeek(pUserData, pageBodySize, drflac_seek_origin_current)) {
++            if (!onSeek(pUserData, pageBodySize, DRFLAC_SEEK_CUR)) {
+                 return DRFLAC_FALSE;
+             }
+         }
+@@ -7819,18 +7864,19 @@
+ }
+ #endif
+ 
+-static drflac_bool32 drflac__init_private(drflac_init_info* pInit, drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_meta_proc onMeta, drflac_container container, void* pUserData, void* pUserDataMD)
++static drflac_bool32 drflac__init_private(drflac_init_info* pInit, drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_tell_proc onTell, drflac_meta_proc onMeta, drflac_container container, void* pUserData, void* pUserDataMD)
+ {
+     drflac_bool32 relaxed;
+     drflac_uint8 id[4];
+ 
+-    if (pInit == NULL || onRead == NULL || onSeek == NULL) {
++    if (pInit == NULL || onRead == NULL || onSeek == NULL) {    /* <-- onTell is optional. */
+         return DRFLAC_FALSE;
+     }
+ 
+     DRFLAC_ZERO_MEMORY(pInit, sizeof(*pInit));
+     pInit->onRead       = onRead;
+     pInit->onSeek       = onSeek;
++    pInit->onTell       = onTell;
+     pInit->onMeta       = onMeta;
+     pInit->container    = container;
+     pInit->pUserData    = pUserData;
+@@ -7838,6 +7884,7 @@
+ 
+     pInit->bs.onRead    = onRead;
+     pInit->bs.onSeek    = onSeek;
++    pInit->bs.onTell    = onTell;
+     pInit->bs.pUserData = pUserData;
+     drflac__reset_cache(&pInit->bs);
+ 
+@@ -7870,7 +7917,7 @@
+                 headerSize += 10;
+             }
+ 
+-            if (!onSeek(pUserData, headerSize, drflac_seek_origin_current)) {
++            if (!onSeek(pUserData, headerSize, DRFLAC_SEEK_CUR)) {
+                 return DRFLAC_FALSE;    /* Failed to seek past the tag. */
+             }
+             pInit->runningFilePos += headerSize;
+@@ -7922,7 +7969,7 @@
+ }
+ 
+ 
+-static drflac* drflac_open_with_metadata_private(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_meta_proc onMeta, drflac_container container, void* pUserData, void* pUserDataMD, const drflac_allocation_callbacks* pAllocationCallbacks)
++static drflac* drflac_open_with_metadata_private(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_tell_proc onTell, drflac_meta_proc onMeta, drflac_container container, void* pUserData, void* pUserDataMD, const drflac_allocation_callbacks* pAllocationCallbacks)
+ {
+     drflac_init_info init;
+     drflac_uint32 allocationSize;
+@@ -7940,7 +7987,7 @@
+     /* CPU support first. */
+     drflac__init_cpu_caps();
+ 
+-    if (!drflac__init_private(&init, onRead, onSeek, onMeta, container, pUserData, pUserDataMD)) {
++    if (!drflac__init_private(&init, onRead, onSeek, onTell, onMeta, container, pUserData, pUserDataMD)) {
+         return NULL;
+     }
+ 
+@@ -7996,6 +8043,7 @@
+         DRFLAC_ZERO_MEMORY(pOggbs, sizeof(*pOggbs));
+         pOggbs->onRead = onRead;
+         pOggbs->onSeek = onSeek;
++        pOggbs->onTell = onTell;
+         pOggbs->pUserData = pUserData;
+         pOggbs->currentBytePos = init.oggFirstBytePos;
+         pOggbs->firstBytePos = init.oggFirstBytePos;
+@@ -8016,17 +8064,19 @@
+     if (init.hasMetadataBlocks) {
+         drflac_read_proc onReadOverride = onRead;
+         drflac_seek_proc onSeekOverride = onSeek;
++        drflac_tell_proc onTellOverride = onTell;
+         void* pUserDataOverride = pUserData;
+ 
+ #ifndef DR_FLAC_NO_OGG
+         if (init.container == drflac_container_ogg) {
+             onReadOverride = drflac__on_read_ogg;
+             onSeekOverride = drflac__on_seek_ogg;
++            onTellOverride = drflac__on_tell_ogg;
+             pUserDataOverride = (void*)pOggbs;
+         }
+ #endif
+ 
+-        if (!drflac__read_and_decode_metadata(onReadOverride, onSeekOverride, onMeta, pUserDataOverride, pUserDataMD, &firstFramePos, &seektablePos, &seekpointCount, &allocationCallbacks)) {
++        if (!drflac__read_and_decode_metadata(onReadOverride, onSeekOverride, onTellOverride, onMeta, pUserDataOverride, pUserDataMD, &firstFramePos, &seektablePos, &seekpointCount, &allocationCallbacks)) {
+         #ifndef DR_FLAC_NO_OGG
+             drflac__free_from_callbacks(pOggbs, &allocationCallbacks);
+         #endif
+@@ -8061,6 +8111,7 @@
+         /* The Ogg bistream needs to be layered on top of the original bitstream. */
+         pFlac->bs.onRead = drflac__on_read_ogg;
+         pFlac->bs.onSeek = drflac__on_seek_ogg;
++        pFlac->bs.onTell = drflac__on_tell_ogg;
+         pFlac->bs.pUserData = (void*)pInternalOggbs;
+         pFlac->_oggbs = (void*)pInternalOggbs;
+     }
+@@ -8087,7 +8138,7 @@
+             DRFLAC_ASSERT(pFlac->bs.onRead != NULL);
+ 
+             /* Seek to the seektable, then just read directly into our seektable buffer. */
+-            if (pFlac->bs.onSeek(pFlac->bs.pUserData, (int)seektablePos, drflac_seek_origin_start)) {
++            if (pFlac->bs.onSeek(pFlac->bs.pUserData, (int)seektablePos, DRFLAC_SEEK_SET)) {
+                 drflac_uint32 iSeekpoint;
+ 
+                 for (iSeekpoint = 0; iSeekpoint < seekpointCount; iSeekpoint += 1) {
+@@ -8105,7 +8156,7 @@
+                 }
+ 
+                 /* We need to seek back to where we were. If this fails it's a critical error. */
+-                if (!pFlac->bs.onSeek(pFlac->bs.pUserData, (int)pFlac->firstFLACFramePosInBytes, drflac_seek_origin_start)) {
++                if (!pFlac->bs.onSeek(pFlac->bs.pUserData, (int)pFlac->firstFLACFramePosInBytes, DRFLAC_SEEK_SET)) {
+                     drflac__free_from_callbacks(pFlac, &allocationCallbacks);
+                     return NULL;
+                 }
+@@ -8276,7 +8327,7 @@
+     #ifdef ENOSYS
+         case ENOSYS: return DRFLAC_NOT_IMPLEMENTED;
+     #endif
+-    #ifdef ENOTEMPTY
++    #if defined(ENOTEMPTY) && ENOTEMPTY != EEXIST   /* In AIX, ENOTEMPTY and EEXIST use the same value. */
+         case ENOTEMPTY: return DRFLAC_DIRECTORY_NOT_EMPTY;
+     #endif
+     #ifdef ELOOP
+@@ -8727,10 +8778,40 @@
+ 
+ static drflac_bool32 drflac__on_seek_stdio(void* pUserData, int offset, drflac_seek_origin origin)
+ {
+-    DRFLAC_ASSERT(offset >= 0);  /* <-- Never seek backwards. */
+-
+-    return fseek((FILE*)pUserData, offset, (origin == drflac_seek_origin_current) ? SEEK_CUR : SEEK_SET) == 0;
+-}
++    int whence = SEEK_SET;
++    if (origin == DRFLAC_SEEK_CUR) {
++        whence = SEEK_CUR;
++    } else if (origin == DRFLAC_SEEK_END) {
++        whence = SEEK_END;
++    }
++
++    return fseek((FILE*)pUserData, offset, whence) == 0;
++}
++
++static drflac_bool32 drflac__on_tell_stdio(void* pUserData, drflac_int64* pCursor)
++{
++    FILE* pFileStdio = (FILE*)pUserData;
++    drflac_int64 result;
++
++    /* These were all validated at a higher level. */
++    DRFLAC_ASSERT(pFileStdio != NULL);
++    DRFLAC_ASSERT(pCursor    != NULL);
++
++#if defined(_WIN32) && !defined(NXDK)
++    #if defined(_MSC_VER) && _MSC_VER > 1200
++        result = _ftelli64(pFileStdio);
++    #else
++        result = ftell(pFileStdio);
++    #endif
++#else
++    result = ftell(pFileStdio);
++#endif
++
++    *pCursor = result;
++
++    return DRFLAC_TRUE;
++}
++
+ 
+ 
+ DRFLAC_API drflac* drflac_open_file(const char* pFileName, const drflac_allocation_callbacks* pAllocationCallbacks)
+@@ -8742,7 +8823,7 @@
+         return NULL;
+     }
+ 
+-    pFlac = drflac_open(drflac__on_read_stdio, drflac__on_seek_stdio, (void*)pFile, pAllocationCallbacks);
++    pFlac = drflac_open(drflac__on_read_stdio, drflac__on_seek_stdio, drflac__on_tell_stdio, (void*)pFile, pAllocationCallbacks);
+     if (pFlac == NULL) {
+         fclose(pFile);
+         return NULL;
+@@ -8761,7 +8842,7 @@
+         return NULL;
+     }
+ 
+-    pFlac = drflac_open(drflac__on_read_stdio, drflac__on_seek_stdio, (void*)pFile, pAllocationCallbacks);
++    pFlac = drflac_open(drflac__on_read_stdio, drflac__on_seek_stdio, drflac__on_tell_stdio, (void*)pFile, pAllocationCallbacks);
+     if (pFlac == NULL) {
+         fclose(pFile);
+         return NULL;
+@@ -8780,7 +8861,7 @@
+         return NULL;
+     }
+ 
+-    pFlac = drflac_open_with_metadata_private(drflac__on_read_stdio, drflac__on_seek_stdio, onMeta, drflac_container_unknown, (void*)pFile, pUserData, pAllocationCallbacks);
++    pFlac = drflac_open_with_metadata_private(drflac__on_read_stdio, drflac__on_seek_stdio, drflac__on_tell_stdio, onMeta, drflac_container_unknown, (void*)pFile, pUserData, pAllocationCallbacks);
+     if (pFlac == NULL) {
+         fclose(pFile);
+         return pFlac;
+@@ -8799,7 +8880,7 @@
+         return NULL;
+     }
+ 
+-    pFlac = drflac_open_with_metadata_private(drflac__on_read_stdio, drflac__on_seek_stdio, onMeta, drflac_container_unknown, (void*)pFile, pUserData, pAllocationCallbacks);
++    pFlac = drflac_open_with_metadata_private(drflac__on_read_stdio, drflac__on_seek_stdio, drflac__on_tell_stdio, onMeta, drflac_container_unknown, (void*)pFile, pUserData, pAllocationCallbacks);
+     if (pFlac == NULL) {
+         fclose(pFile);
+         return pFlac;
+@@ -8834,28 +8915,43 @@
+ static drflac_bool32 drflac__on_seek_memory(void* pUserData, int offset, drflac_seek_origin origin)
+ {
+     drflac__memory_stream* memoryStream = (drflac__memory_stream*)pUserData;
++    drflac_int64 newCursor;
+ 
+     DRFLAC_ASSERT(memoryStream != NULL);
+-    DRFLAC_ASSERT(offset >= 0); /* <-- Never seek backwards. */
+-
+-    if (offset > (drflac_int64)memoryStream->dataSize) {
++
++    if (origin == DRFLAC_SEEK_SET) {
++        newCursor = 0;
++    } else if (origin == DRFLAC_SEEK_CUR) {
++        newCursor = (drflac_int64)memoryStream->currentReadPos;
++    } else if (origin == DRFLAC_SEEK_END) {
++        newCursor = (drflac_int64)memoryStream->dataSize;
++    } else {
++        DRFLAC_ASSERT(!"Invalid seek origin");
+         return DRFLAC_FALSE;
+     }
+ 
+-    if (origin == drflac_seek_origin_current) {
+-        if (memoryStream->currentReadPos + offset <= memoryStream->dataSize) {
+-            memoryStream->currentReadPos += offset;
+-        } else {
+-            return DRFLAC_FALSE;  /* Trying to seek too far forward. */
+-        }
+-    } else {
+-        if ((drflac_uint32)offset <= memoryStream->dataSize) {
+-            memoryStream->currentReadPos = offset;
+-        } else {
+-            return DRFLAC_FALSE;  /* Trying to seek too far forward. */
+-        }
+-    }
+-
++    newCursor += offset;
++
++    if (newCursor < 0) {
++        return DRFLAC_FALSE;  /* Trying to seek prior to the start of the buffer. */
++    }
++    if ((size_t)newCursor > memoryStream->dataSize) {
++        return DRFLAC_FALSE;  /* Trying to seek beyond the end of the buffer. */
++    }
++
++    memoryStream->currentReadPos = (size_t)newCursor;
++
++    return DRFLAC_TRUE;
++}
++
++static drflac_bool32 drflac__on_tell_memory(void* pUserData, drflac_int64* pCursor)
++{
++    drflac__memory_stream* memoryStream = (drflac__memory_stream*)pUserData;
++
++    DRFLAC_ASSERT(memoryStream != NULL);
++    DRFLAC_ASSERT(pCursor != NULL);
++
++    *pCursor = (drflac_int64)memoryStream->currentReadPos;
+     return DRFLAC_TRUE;
+ }
+ 
+@@ -8867,7 +8963,7 @@
+     memoryStream.data = (const drflac_uint8*)pData;
+     memoryStream.dataSize = dataSize;
+     memoryStream.currentReadPos = 0;
+-    pFlac = drflac_open(drflac__on_read_memory, drflac__on_seek_memory, &memoryStream, pAllocationCallbacks);
++    pFlac = drflac_open(drflac__on_read_memory, drflac__on_seek_memory, drflac__on_tell_memory, &memoryStream, pAllocationCallbacks);
+     if (pFlac == NULL) {
+         return NULL;
+     }
+@@ -8898,7 +8994,7 @@
+     memoryStream.data = (const drflac_uint8*)pData;
+     memoryStream.dataSize = dataSize;
+     memoryStream.currentReadPos = 0;
+-    pFlac = drflac_open_with_metadata_private(drflac__on_read_memory, drflac__on_seek_memory, onMeta, drflac_container_unknown, &memoryStream, pUserData, pAllocationCallbacks);
++    pFlac = drflac_open_with_metadata_private(drflac__on_read_memory, drflac__on_seek_memory, drflac__on_tell_memory, onMeta, drflac_container_unknown, &memoryStream, pUserData, pAllocationCallbacks);
+     if (pFlac == NULL) {
+         return NULL;
+     }
+@@ -8923,22 +9019,22 @@
+ 
+ 
+ 
+-DRFLAC_API drflac* drflac_open(drflac_read_proc onRead, drflac_seek_proc onSeek, void* pUserData, const drflac_allocation_callbacks* pAllocationCallbacks)
+-{
+-    return drflac_open_with_metadata_private(onRead, onSeek, NULL, drflac_container_unknown, pUserData, pUserData, pAllocationCallbacks);
+-}
+-DRFLAC_API drflac* drflac_open_relaxed(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_container container, void* pUserData, const drflac_allocation_callbacks* pAllocationCallbacks)
+-{
+-    return drflac_open_with_metadata_private(onRead, onSeek, NULL, container, pUserData, pUserData, pAllocationCallbacks);
+-}
+-
+-DRFLAC_API drflac* drflac_open_with_metadata(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_meta_proc onMeta, void* pUserData, const drflac_allocation_callbacks* pAllocationCallbacks)
+-{
+-    return drflac_open_with_metadata_private(onRead, onSeek, onMeta, drflac_container_unknown, pUserData, pUserData, pAllocationCallbacks);
+-}
+-DRFLAC_API drflac* drflac_open_with_metadata_relaxed(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_meta_proc onMeta, drflac_container container, void* pUserData, const drflac_allocation_callbacks* pAllocationCallbacks)
+-{
+-    return drflac_open_with_metadata_private(onRead, onSeek, onMeta, container, pUserData, pUserData, pAllocationCallbacks);
++DRFLAC_API drflac* drflac_open(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_tell_proc onTell, void* pUserData, const drflac_allocation_callbacks* pAllocationCallbacks)
++{
++    return drflac_open_with_metadata_private(onRead, onSeek, onTell, NULL, drflac_container_unknown, pUserData, pUserData, pAllocationCallbacks);
++}
++DRFLAC_API drflac* drflac_open_relaxed(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_tell_proc onTell, drflac_container container, void* pUserData, const drflac_allocation_callbacks* pAllocationCallbacks)
++{
++    return drflac_open_with_metadata_private(onRead, onSeek, onTell, NULL, container, pUserData, pUserData, pAllocationCallbacks);
++}
++
++DRFLAC_API drflac* drflac_open_with_metadata(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_tell_proc onTell, drflac_meta_proc onMeta, void* pUserData, const drflac_allocation_callbacks* pAllocationCallbacks)
++{
++    return drflac_open_with_metadata_private(onRead, onSeek, onTell, onMeta, drflac_container_unknown, pUserData, pUserData, pAllocationCallbacks);
++}
++DRFLAC_API drflac* drflac_open_with_metadata_relaxed(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_tell_proc onTell, drflac_meta_proc onMeta, drflac_container container, void* pUserData, const drflac_allocation_callbacks* pAllocationCallbacks)
++{
++    return drflac_open_with_metadata_private(onRead, onSeek, onTell, onMeta, container, pUserData, pUserData, pAllocationCallbacks);
+ }
+ 
+ DRFLAC_API void drflac_close(drflac* pFlac)
+@@ -11702,57 +11798,42 @@
+ {                                                                                                                                                                   \
+     type* pSampleData = NULL;                                                                                                                                       \
+     drflac_uint64 totalPCMFrameCount;                                                                                                                               \
++    type buffer[4096];                                                                                                                                              \
++    drflac_uint64 pcmFramesRead;                                                                                                                                    \
++    size_t sampleDataBufferSize = sizeof(buffer);                                                                                                                   \
+                                                                                                                                                                     \
+     DRFLAC_ASSERT(pFlac != NULL);                                                                                                                                   \
+                                                                                                                                                                     \
+-    totalPCMFrameCount = pFlac->totalPCMFrameCount;                                                                                                                 \
++    totalPCMFrameCount = 0;                                                                                                                                         \
++                                                                                                                                                                    \
++    pSampleData = (type*)drflac__malloc_from_callbacks(sampleDataBufferSize, &pFlac->allocationCallbacks);                                                          \
++    if (pSampleData == NULL) {                                                                                                                                      \
++        goto on_error;                                                                                                                                              \
++    }                                                                                                                                                               \
+                                                                                                                                                                     \
+-    if (totalPCMFrameCount == 0) {                                                                                                                                  \
+-        type buffer[4096];                                                                                                                                          \
+-        drflac_uint64 pcmFramesRead;                                                                                                                                \
+-        size_t sampleDataBufferSize = sizeof(buffer);                                                                                                               \
++    while ((pcmFramesRead = (drflac_uint64)drflac_read_pcm_frames_##extension(pFlac, sizeof(buffer)/sizeof(buffer[0])/pFlac->channels, buffer)) > 0) {              \
++        if (((totalPCMFrameCount + pcmFramesRead) * pFlac->channels * sizeof(type)) > sampleDataBufferSize) {                                                       \
++            type* pNewSampleData;                                                                                                                                   \
++            size_t newSampleDataBufferSize;                                                                                                                         \
+                                                                                                                                                                     \
+-        pSampleData = (type*)drflac__malloc_from_callbacks(sampleDataBufferSize, &pFlac->allocationCallbacks);                                                      \
+-        if (pSampleData == NULL) {                                                                                                                                  \
+-            goto on_error;                                                                                                                                          \
++            newSampleDataBufferSize = sampleDataBufferSize * 2;                                                                                                     \
++            pNewSampleData = (type*)drflac__realloc_from_callbacks(pSampleData, newSampleDataBufferSize, sampleDataBufferSize, &pFlac->allocationCallbacks);        \
++            if (pNewSampleData == NULL) {                                                                                                                           \
++                drflac__free_from_callbacks(pSampleData, &pFlac->allocationCallbacks);                                                                              \
++                goto on_error;                                                                                                                                      \
++            }                                                                                                                                                       \
++                                                                                                                                                                    \
++            sampleDataBufferSize = newSampleDataBufferSize;                                                                                                         \
++            pSampleData = pNewSampleData;                                                                                                                           \
+         }                                                                                                                                                           \
+                                                                                                                                                                     \
+-        while ((pcmFramesRead = (drflac_uint64)drflac_read_pcm_frames_##extension(pFlac, sizeof(buffer)/sizeof(buffer[0])/pFlac->channels, buffer)) > 0) {          \
+-            if (((totalPCMFrameCount + pcmFramesRead) * pFlac->channels * sizeof(type)) > sampleDataBufferSize) {                                                   \
+-                type* pNewSampleData;                                                                                                                               \
+-                size_t newSampleDataBufferSize;                                                                                                                     \
+-                                                                                                                                                                    \
+-                newSampleDataBufferSize = sampleDataBufferSize * 2;                                                                                                 \
+-                pNewSampleData = (type*)drflac__realloc_from_callbacks(pSampleData, newSampleDataBufferSize, sampleDataBufferSize, &pFlac->allocationCallbacks);    \
+-                if (pNewSampleData == NULL) {                                                                                                                       \
+-                    drflac__free_from_callbacks(pSampleData, &pFlac->allocationCallbacks);                                                                          \
+-                    goto on_error;                                                                                                                                  \
+-                }                                                                                                                                                   \
+-                                                                                                                                                                    \
+-                sampleDataBufferSize = newSampleDataBufferSize;                                                                                                     \
+-                pSampleData = pNewSampleData;                                                                                                                       \
+-            }                                                                                                                                                       \
++        DRFLAC_COPY_MEMORY(pSampleData + (totalPCMFrameCount*pFlac->channels), buffer, (size_t)(pcmFramesRead*pFlac->channels*sizeof(type)));                       \
++        totalPCMFrameCount += pcmFramesRead;                                                                                                                        \
++    }                                                                                                                                                               \
+                                                                                                                                                                     \
+-            DRFLAC_COPY_MEMORY(pSampleData + (totalPCMFrameCount*pFlac->channels), buffer, (size_t)(pcmFramesRead*pFlac->channels*sizeof(type)));                   \
+-            totalPCMFrameCount += pcmFramesRead;                                                                                                                    \
+-        }                                                                                                                                                           \
+-                                                                                                                                                                    \
+-        /* At this point everything should be decoded, but we just want to fill the unused part buffer with silence - need to                                       \
+-           protect those ears from random noise! */                                                                                                                 \
+-        DRFLAC_ZERO_MEMORY(pSampleData + (totalPCMFrameCount*pFlac->channels), (size_t)(sampleDataBufferSize - totalPCMFrameCount*pFlac->channels*sizeof(type)));   \
+-    } else {                                                                                                                                                        \
+-        drflac_uint64 dataSize = totalPCMFrameCount*pFlac->channels*sizeof(type);                                                                                   \
+-        if (dataSize > (drflac_uint64)DRFLAC_SIZE_MAX) {                                                                                                            \
+-            goto on_error;  /* The decoded data is too big. */                                                                                                      \
+-        }                                                                                                                                                           \
+-                                                                                                                                                                    \
+-        pSampleData = (type*)drflac__malloc_from_callbacks((size_t)dataSize, &pFlac->allocationCallbacks);    /* <-- Safe cast as per the check above. */           \
+-        if (pSampleData == NULL) {                                                                                                                                  \
+-            goto on_error;                                                                                                                                          \
+-        }                                                                                                                                                           \
+-                                                                                                                                                                    \
+-        totalPCMFrameCount = drflac_read_pcm_frames_##extension(pFlac, pFlac->totalPCMFrameCount, pSampleData);                                                     \
+-    }                                                                                                                                                               \
++    /* At this point everything should be decoded, but we just want to fill the unused part buffer with silence - need to                                           \
++       protect those ears from random noise! */                                                                                                                     \
++    DRFLAC_ZERO_MEMORY(pSampleData + (totalPCMFrameCount*pFlac->channels), (size_t)(sampleDataBufferSize - totalPCMFrameCount*pFlac->channels*sizeof(type)));       \
+                                                                                                                                                                     \
+     if (sampleRateOut) *sampleRateOut = pFlac->sampleRate;                                                                                                          \
+     if (channelsOut) *channelsOut = pFlac->channels;                                                                                                                \
+@@ -11770,7 +11851,7 @@
+ DRFLAC_DEFINE_FULL_READ_AND_CLOSE(s16, drflac_int16)
+ DRFLAC_DEFINE_FULL_READ_AND_CLOSE(f32, float)
+ 
+-DRFLAC_API drflac_int32* drflac_open_and_read_pcm_frames_s32(drflac_read_proc onRead, drflac_seek_proc onSeek, void* pUserData, unsigned int* channelsOut, unsigned int* sampleRateOut, drflac_uint64* totalPCMFrameCountOut, const drflac_allocation_callbacks* pAllocationCallbacks)
++DRFLAC_API drflac_int32* drflac_open_and_read_pcm_frames_s32(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_tell_proc onTell, void* pUserData, unsigned int* channelsOut, unsigned int* sampleRateOut, drflac_uint64* totalPCMFrameCountOut, const drflac_allocation_callbacks* pAllocationCallbacks)
+ {
+     drflac* pFlac;
+ 
+@@ -11784,7 +11865,7 @@
+         *totalPCMFrameCountOut = 0;
+     }
+ 
+-    pFlac = drflac_open(onRead, onSeek, pUserData, pAllocationCallbacks);
++    pFlac = drflac_open(onRead, onSeek, onTell, pUserData, pAllocationCallbacks);
+     if (pFlac == NULL) {
+         return NULL;
+     }
+@@ -11792,7 +11873,7 @@
+     return drflac__full_read_and_close_s32(pFlac, channelsOut, sampleRateOut, totalPCMFrameCountOut);
+ }
+ 
+-DRFLAC_API drflac_int16* drflac_open_and_read_pcm_frames_s16(drflac_read_proc onRead, drflac_seek_proc onSeek, void* pUserData, unsigned int* channelsOut, unsigned int* sampleRateOut, drflac_uint64* totalPCMFrameCountOut, const drflac_allocation_callbacks* pAllocationCallbacks)
++DRFLAC_API drflac_int16* drflac_open_and_read_pcm_frames_s16(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_tell_proc onTell, void* pUserData, unsigned int* channelsOut, unsigned int* sampleRateOut, drflac_uint64* totalPCMFrameCountOut, const drflac_allocation_callbacks* pAllocationCallbacks)
+ {
+     drflac* pFlac;
+ 
+@@ -11806,7 +11887,7 @@
+         *totalPCMFrameCountOut = 0;
+     }
+ 
+-    pFlac = drflac_open(onRead, onSeek, pUserData, pAllocationCallbacks);
++    pFlac = drflac_open(onRead, onSeek, onTell, pUserData, pAllocationCallbacks);
+     if (pFlac == NULL) {
+         return NULL;
+     }
+@@ -11814,7 +11895,7 @@
+     return drflac__full_read_and_close_s16(pFlac, channelsOut, sampleRateOut, totalPCMFrameCountOut);
+ }
+ 
+-DRFLAC_API float* drflac_open_and_read_pcm_frames_f32(drflac_read_proc onRead, drflac_seek_proc onSeek, void* pUserData, unsigned int* channelsOut, unsigned int* sampleRateOut, drflac_uint64* totalPCMFrameCountOut, const drflac_allocation_callbacks* pAllocationCallbacks)
++DRFLAC_API float* drflac_open_and_read_pcm_frames_f32(drflac_read_proc onRead, drflac_seek_proc onSeek, drflac_tell_proc onTell, void* pUserData, unsigned int* channelsOut, unsigned int* sampleRateOut, drflac_uint64* totalPCMFrameCountOut, const drflac_allocation_callbacks* pAllocationCallbacks)
+ {
+     drflac* pFlac;
+ 
+@@ -11828,7 +11909,7 @@
+         *totalPCMFrameCountOut = 0;
+     }
+ 
+-    pFlac = drflac_open(onRead, onSeek, pUserData, pAllocationCallbacks);
++    pFlac = drflac_open(onRead, onSeek, onTell, pUserData, pAllocationCallbacks);
+     if (pFlac == NULL) {
+         return NULL;
+     }
+@@ -12077,6 +12158,34 @@
+ /*
+ REVISION HISTORY
+ ================
++v0.13.2 - 2025-12-02
++  - Improve robustness of the parsing of picture metadata to improve support for memory constrained embedded devices.
++  - Fix a warning about an assigned by unused variable.
++  - Improvements to drflac_open_and_read_pcm_frames_*() and family to avoid excessively large memory allocations from malformed files.
++
++v0.13.1 - 2025-09-10
++  - Fix an error with the NXDK build.
++
++v0.13.0 - 2025-07-23
++  - API CHANGE: Seek origin enums have been renamed to match the naming convention used by other dr_libs libraries:
++    - drflac_seek_origin_start   -> DRFLAC_SEEK_SET
++    - drflac_seek_origin_current -> DRFLAC_SEEK_CUR
++    - DRFLAC_SEEK_END (new)
++  - API CHANGE: A new seek origin has been added to allow seeking from the end of the file. If you implement your own `onSeek` callback, you should now detect and handle `DRFLAC_SEEK_END`. If seeking to the end is not supported, return `DRFLAC_FALSE`. If you only use `*_open_file()` or `*_open_memory()`, you need not change anything.
++  - API CHANGE: An `onTell` callback has been added to the following functions:
++    - drflac_open()
++    - drflac_open_relaxed()
++    - drflac_open_with_metadata()
++    - drflac_open_with_metadata_relaxed()
++    - drflac_open_and_read_pcm_frames_s32()
++    - drflac_open_and_read_pcm_frames_s16()
++    - drflac_open_and_read_pcm_frames_f32()
++  - Fix compilation for AIX OS.
++
++v0.12.43 - 2024-12-17
++  - Fix a possible buffer overflow during decoding.
++  - Improve detection of ARM64EC
++
+ v0.12.42 - 2023-11-02
+   - Fix build for ARMv6-M.
+   - Fix a compilation warning with GCC.
+diff --git a/src/codecs/minimp3/minimp3.h b/src/codecs/minimp3/minimp3.h
+--- a/src/codecs/minimp3/minimp3.h
++++ b/src/codecs/minimp3/minimp3.h
+@@ -651,6 +651,10 @@
+     return y;
+ }
+ 
++#if (defined(__GNUC__) && (__GNUC__ >= 14)) && !defined(__clang__)
++    #pragma GCC diagnostic push
++    #pragma GCC diagnostic ignored "-Wstringop-overflow"
++#endif
+ static void L3_decode_scalefactors(const uint8_t *hdr, uint8_t *ist_pos, bs_t *bs, const L3_gr_info_t *gr, float *scf, int ch)
+ {
+     static const uint8_t g_scf_partitions[3][28] = {
+@@ -712,6 +716,9 @@
+         scf[i] = L3_ldexp_q2(gain, iscf[i] << scf_shift);
+     }
+ }
++#if (defined(__GNUC__) && (__GNUC__ >= 14)) && !defined(__clang__)
++    #pragma GCC diagnostic pop
++#endif
+ 
+ static const float g_pow43[129 + 16] = {
+     0,-1,-2.519842f,-4.326749f,-6.349604f,-8.549880f,-10.902724f,-13.390518f,-16.000000f,-18.720754f,-21.544347f,-24.463781f,-27.473142f,-30.567351f,-33.741992f,-36.993181f,
+diff --git a/src/codecs/music_drflac.c b/src/codecs/music_drflac.c
+--- a/src/codecs/music_drflac.c
++++ b/src/codecs/music_drflac.c
+@@ -77,13 +77,33 @@
+ static drflac_bool32 DRFLAC_SeekCB(void *context, int offset, drflac_seek_origin origin)
+ {
+     DRFLAC_Music *music = (DRFLAC_Music *)context;
+-    int whence = (origin == drflac_seek_origin_start) ? RW_SEEK_SET : RW_SEEK_CUR;
++    int whence;
++    switch (origin) {
++    case DRFLAC_SEEK_SET:
++        whence = RW_SEEK_SET;
++        break;
++    case DRFLAC_SEEK_CUR:
++        whence = RW_SEEK_CUR;
++        break;
++    case DRFLAC_SEEK_END:
++        whence = RW_SEEK_END;
++        break;
++    default:
++        return DRFLAC_FALSE;
++    }
+     if (MP3_RWseek(&music->file, offset, whence) < 0) {
+         return DRFLAC_FALSE;
+     }
+     return DRFLAC_TRUE;
+ }
+ 
++static drflac_bool32 DRFLAC_TellCB(void *context, drflac_int64 *pos)
++{
++    DRFLAC_Music *music = (DRFLAC_Music *)context;
++    *pos = MP3_RWtell(&music->file);
++    return (*pos < 0) ? DRFLAC_FALSE : DRFLAC_TRUE;
++}
++
+ static void DRFLAC_MetaCB(void *context, drflac_metadata *metadata)
+ {
+     DRFLAC_Music *music = (DRFLAC_Music *)context;
+@@ -176,7 +196,7 @@
+ 
+     meta_tags_init(&music->tags);
+ 
+-    music->dec = drflac_open_with_metadata(DRFLAC_ReadCB, DRFLAC_SeekCB, DRFLAC_MetaCB, music, NULL);
++    music->dec = drflac_open_with_metadata(DRFLAC_ReadCB, DRFLAC_SeekCB, DRFLAC_TellCB, DRFLAC_MetaCB, music, NULL);
+     if (!music->dec) {
+         SDL_free(music);
+         Mix_SetError("music_drflac: corrupt flac file (bad stream).");
+diff --git a/src/codecs/music_mpg123.c b/src/codecs/music_mpg123.c
+--- a/src/codecs/music_mpg123.c
++++ b/src/codecs/music_mpg123.c
+@@ -29,6 +29,10 @@
+ #include "music_mpg123.h"
+ #include "mp3utils.h"
+ 
++/* Not defining MPG123_PORTABLE_API here, because mpg123 v1.32.x,
++ * i.e. MPG123_API_VERSION 48, doesn't have mpg123_open_handle64()
++ */
++/* #define MPG123_PORTABLE_API */
+ #include <stdio.h>      /* For SEEK_SET */
+ #ifdef MPG123_HEADER
+ #include MPG123_HEADER
+@@ -54,7 +58,7 @@
+     int (*mpg123_getformat)( mpg123_handle *mh, long *rate, int *channels, int *encoding );
+     int (*mpg123_init)(void);
+     mpg123_handle *(*mpg123_new)(const char* decoder, int *error);
+-    int (*mpg123_open_handle)(mpg123_handle *mh, void *iohandle);
++    const char* (*mpg123_strerror)(mpg123_handle *mh);
+     const char* (*mpg123_plain_strerror)(int errcode);
+     void (*mpg123_rates)(const long **list, size_t *number);
+ #if (MPG123_API_VERSION >= 45) /* api (but not abi) change as of mpg123-1.26.0 */
+@@ -62,11 +66,19 @@
+ #else
+     int (*mpg123_read)(mpg123_handle *mh, unsigned char *outmemory, size_t outmemsize, size_t *done );
+ #endif
++#if (MPG123_API_VERSION >= 49)
++    int (*mpg123_open_handle64)(mpg123_handle *mh, void *iohandle);
++    int (*mpg123_reader64)(mpg123_handle *mh, int (*r_read)(void*, void*, size_t, size_t*), int64_t (*r_lseek)(void*, int64_t, int), void (*cleanup)(void*));
++    int64_t (*mpg123_seek64)(mpg123_handle *mh, int64_t sampleoff, int whence);
++    int64_t (*mpg123_tell64)(mpg123_handle *mh);
++    int64_t (*mpg123_length64)(mpg123_handle *mh);
++#else
++    int (*mpg123_open_handle)(mpg123_handle *mh, void *iohandle);
+     int (*mpg123_replace_reader_handle)( mpg123_handle *mh, MIX_SSIZE_T (*r_read) (void *, void *, size_t), off_t (*r_lseek)(void *, off_t, int), void (*cleanup)(void*) );
+     off_t (*mpg123_seek)( mpg123_handle *mh, off_t sampleoff, int whence );
+     off_t (*mpg123_tell)( mpg123_handle *mh);
+     off_t (*mpg123_length)(mpg123_handle *mh);
+-    const char* (*mpg123_strerror)(mpg123_handle *mh);
++#endif
+ } mpg123_loader;
+ 
+ static mpg123_loader mpg123;
+@@ -102,7 +114,7 @@
+         FUNCTION_LOADER(mpg123_getformat, int (*)( mpg123_handle *mh, long *rate, int *channels, int *encoding ))
+         FUNCTION_LOADER(mpg123_init, int (*)(void))
+         FUNCTION_LOADER(mpg123_new, mpg123_handle *(*)(const char* decoder, int *error))
+-        FUNCTION_LOADER(mpg123_open_handle, int (*)(mpg123_handle *mh, void *iohandle))
++        FUNCTION_LOADER(mpg123_strerror, const char* (*)(mpg123_handle *mh))
+         FUNCTION_LOADER(mpg123_plain_strerror, const char* (*)(int errcode))
+         FUNCTION_LOADER(mpg123_rates, void (*)(const long **list, size_t *number))
+ #if (MPG123_API_VERSION >= 45) /* api (but not abi) change as of mpg123-1.26.0 */
+@@ -110,11 +122,19 @@
+ #else
+         FUNCTION_LOADER(mpg123_read, int (*)(mpg123_handle *mh, unsigned char *outmemory, size_t outmemsize, size_t *done ))
+ #endif
++#if (MPG123_API_VERSION >= 49)
++        FUNCTION_LOADER(mpg123_open_handle64, int (*)(mpg123_handle *mh, void *iohandle))
++        FUNCTION_LOADER(mpg123_reader64, int (*)(mpg123_handle *mh, int (*r_read)(void*, void*, size_t, size_t*), int64_t (*r_lseek)(void*, int64_t, int), void (*cleanup)(void*)))
++        FUNCTION_LOADER(mpg123_seek64, int64_t (*)(mpg123_handle *mh, int64_t sampleoff, int whence))
++        FUNCTION_LOADER(mpg123_tell64, int64_t (*)(mpg123_handle *mh))
++        FUNCTION_LOADER(mpg123_length64, int64_t (*)(mpg123_handle *mh))
++#else
++        FUNCTION_LOADER(mpg123_open_handle, int (*)(mpg123_handle *mh, void *iohandle))
+         FUNCTION_LOADER(mpg123_replace_reader_handle, int (*)( mpg123_handle *mh, MIX_SSIZE_T (*r_read) (void *, void *, size_t), off_t (*r_lseek)(void *, off_t, int), void (*cleanup)(void*) ))
+         FUNCTION_LOADER(mpg123_seek, off_t (*)( mpg123_handle *mh, off_t sampleoff, int whence ))
+         FUNCTION_LOADER(mpg123_tell, off_t (*)( mpg123_handle *mh))
+         FUNCTION_LOADER(mpg123_length, off_t (*)(mpg123_handle *mh))
+-        FUNCTION_LOADER(mpg123_strerror, const char* (*)(mpg123_handle *mh))
++#endif
+     }
+     ++mpg123.loaded;
+ 
+@@ -147,7 +167,7 @@
+     unsigned char *buffer;
+     size_t buffer_size;
+     long sample_rate;
+-    off_t total_length;
++    Sint64 total_length;
+     Mix_MusicMetaTags tags;
+ } MPG123_Music;
+ 
+@@ -200,6 +220,18 @@
+ }
+ 
+ /* we're gonna override mpg123's I/O with these wrappers for RWops */
++#if (MPG123_API_VERSION >= 49)
++static int rwops_read(void* p, void* dst, size_t n, size_t *b)
++{
++    *b = MP3_RWread((struct mp3file_t *)p, dst, 1, n);
++    return 0;
++}
++
++static int64_t rwops_seek(void* p, int64_t offset, int whence)
++{
++    return MP3_RWseek((struct mp3file_t *)p, offset, whence);
++}
++#else
+ static MIX_SSIZE_T rwops_read(void* p, void* dst, size_t n)
+ {
+     return (MIX_SSIZE_T)MP3_RWread((struct mp3file_t *)p, dst, 1, n);
+@@ -209,6 +241,7 @@
+ {
+     return (off_t)MP3_RWseek((struct mp3file_t *)p, (Sint64)offset, whence);
+ }
++#endif
+ 
+ static void rwops_cleanup(void* p)
+ {
+@@ -268,10 +301,17 @@
+         return NULL;
+     }
+ 
++#if (MPG123_API_VERSION >= 49)
++    result = mpg123.mpg123_reader64(
++        music->handle,
++        rwops_read, rwops_seek, rwops_cleanup
++    );
++#else
+     result = mpg123.mpg123_replace_reader_handle(
+         music->handle,
+         rwops_read, rwops_seek, rwops_cleanup
+     );
++#endif
+     if (result != MPG123_OK) {
+         Mix_SetError("mpg123_replace_reader_handle: %s", mpg_err(music->handle, result));
+         MPG123_Delete(music);
+@@ -298,7 +338,11 @@
+         mpg123.mpg123_format(music->handle, rates[i], channels, formats);
+     }
+ 
++#if (MPG123_API_VERSION >= 49)
++    result = mpg123.mpg123_open_handle64(music->handle, &music->mp3file);
++#else
+     result = mpg123.mpg123_open_handle(music->handle, &music->mp3file);
++#endif
+     if (result != MPG123_OK) {
+         Mix_SetError("mpg123_open_handle: %s", mpg_err(music->handle, result));
+         MPG123_Delete(music);
+@@ -327,7 +371,11 @@
+         return NULL;
+     }
+ 
++#if (MPG123_API_VERSION >= 49)
++    music->total_length = mpg123.mpg123_length64(music->handle);
++#else
+     music->total_length = mpg123.mpg123_length(music->handle);
++#endif
+ 
+     music->freesrc = freesrc;
+     return music;
+@@ -447,9 +495,15 @@
+ static int MPG123_Seek(void *context, double secs)
+ {
+     MPG123_Music *music = (MPG123_Music *)context;
++#if (MPG123_API_VERSION >= 49)
++    int64_t offset = (int64_t)(music->sample_rate * secs);
++    offset = mpg123.mpg123_seek64(music->handle, offset, SEEK_SET);
++#else
+     off_t offset = (off_t)(music->sample_rate * secs);
++    offset = mpg123.mpg123_seek(music->handle, offset, SEEK_SET);
++#endif
+ 
+-    if ((offset = mpg123.mpg123_seek(music->handle, offset, SEEK_SET)) < 0) {
++    if (offset < 0) {
+         return Mix_SetError("mpg123_seek: %s", mpg_err(music->handle, (int)-offset));
+     }
+     return 0;
+@@ -458,11 +512,16 @@
+ static double MPG123_Tell(void *context)
+ {
+     MPG123_Music *music = (MPG123_Music *)context;
+-    off_t offset = 0;
++    Sint64 offset;
+     if (!music->sample_rate) {
+         return 0.0;
+     }
+-    if ((offset = mpg123.mpg123_tell(music->handle)) < 0) {
++#if (MPG123_API_VERSION >= 49)
++    offset = mpg123.mpg123_tell64(music->handle);
++#else
++    offset = mpg123.mpg123_tell(music->handle);
++#endif
++    if (offset < 0) {
+         return Mix_SetError("mpg123_tell: %s", mpg_err(music->handle, (int)-offset));
+     }
+     return (double)offset / music->sample_rate;
+diff --git a/src/codecs/music_ogg.c b/src/codecs/music_ogg.c
+--- a/src/codecs/music_ogg.c
++++ b/src/codecs/music_ogg.c
+@@ -26,6 +26,7 @@
+ #include "SDL_loadso.h"
+ 
+ #include "music_ogg.h"
++#include "remap_channels.h"
+ #include "utils.h"
+ 
+ #define OV_EXCLUDE_STATIC_CALLBACKS
+@@ -195,6 +196,7 @@
+ static int OGG_UpdateSection(OGG_music *music)
+ {
+     vorbis_info *vi;
++    int new_buffer_size;
+ 
+     vi = vorbis.ov_info(&music->vf, -1);
+     if (!vi) {
+@@ -206,11 +208,6 @@
+     }
+     SDL_memcpy(&music->vi, vi, sizeof(*vi));
+ 
+-    if (music->buffer) {
+-        SDL_free(music->buffer);
+-        music->buffer = NULL;
+-    }
+-
+     if (music->stream) {
+         SDL_FreeAudioStream(music->stream);
+         music->stream = NULL;
+@@ -219,13 +216,25 @@
+     music->stream = SDL_NewAudioStream(AUDIO_S16SYS, (Uint8)vi->channels, (int)vi->rate,
+                                        music_spec.format, music_spec.channels, music_spec.freq);
+     if (!music->stream) {
++        SDL_free(music->buffer);
++        music->buffer      = NULL;
++        music->buffer_size = 0;
+         return -1;
+     }
+ 
+-    music->buffer_size = music_spec.samples * (int)sizeof(Sint16) * vi->channels;
+-    music->buffer = (char *)SDL_malloc((size_t)music->buffer_size);
+-    if (!music->buffer) {
+-        return -1;
++    new_buffer_size = music_spec.samples * (int)sizeof(Sint16) * vi->channels;
++
++    /* Note: never shrink the buffer, we just decoded data in there. */
++    if (new_buffer_size > music->buffer_size) {
++        char *new_buffer = (char *)SDL_realloc(music->buffer, new_buffer_size);
++        if (!new_buffer) {
++            SDL_free(music->buffer);
++            music->buffer      = NULL;
++            music->buffer_size = 0;
++            return -1;
++        }
++        music->buffer      = new_buffer;
++        music->buffer_size = new_buffer_size;
+     }
+     return 0;
+ }
+@@ -387,7 +396,7 @@
+ #ifdef OGG_USE_TREMOR
+     amount = (int)vorbis.ov_read(&music->vf, music->buffer, music->buffer_size, &section);
+ #else
+-    amount = (int)vorbis.ov_read(&music->vf, music->buffer, music->buffer_size, SDL_BYTEORDER == SDL_BIG_ENDIAN, 2, 1, &section);
++    amount = (int)vorbis.ov_read(&music->vf, music->buffer, music->buffer_size, SDL_BYTEORDER == SDL_BIG_ENDIAN, (int)sizeof(Sint16), 1, &section);
+ #endif
+     if (amount < 0) {
+         return set_ov_error("ov_read", amount);
+@@ -400,6 +409,10 @@
+         }
+     }
+ 
++    remap_channels_vorbis_s16((Sint16 *)music->buffer,
++                              amount / (int)sizeof(Sint16),
++                              music->vi.channels);
++
+     pcmPos = vorbis.ov_pcm_tell(&music->vf);
+     if (music->loop && (music->play_count != 1) && (pcmPos >= music->loop_end)) {
+         amount -= (int)((pcmPos - music->loop_end) * music->vi.channels) * (int)sizeof(Sint16);
+diff --git a/src/codecs/music_ogg_stb.c b/src/codecs/music_ogg_stb.c
+--- a/src/codecs/music_ogg_stb.c
++++ b/src/codecs/music_ogg_stb.c
+@@ -24,6 +24,7 @@
+ /* This file supports Ogg Vorbis music streams using a modified stb_vorbis module */
+ 
+ #include "music_ogg.h"
++#include "remap_channels.h"
+ #include "utils.h"
+ #include "SDL_assert.h"
+ 
+@@ -74,7 +75,6 @@
+     int volume;
+     stb_vorbis *vf;
+     stb_vorbis_info vi;
+-    int section;
+     SDL_AudioStream *stream;
+     char *buffer;
+     int buffer_size;
+@@ -123,18 +123,15 @@
+ static int OGG_UpdateSection(OGG_music *music)
+ {
+     stb_vorbis_info vi;
++    int new_buffer_size;
+ 
+     vi = stb_vorbis_get_info(music->vf);
+ 
+     if (vi.channels == music->vi.channels && vi.sample_rate == music->vi.sample_rate) {
+         return 0;
+     }
+-    SDL_memcpy(&music->vi, &vi, sizeof(vi));
+ 
+-    if (music->buffer) {
+-        SDL_free(music->buffer);
+-        music->buffer = NULL;
+-    }
++    music->vi = vi;
+ 
+     if (music->stream) {
+         SDL_FreeAudioStream(music->stream);
+@@ -144,17 +141,30 @@
+     music->stream = SDL_NewAudioStream(AUDIO_F32SYS, (Uint8)vi.channels, (int)vi.sample_rate,
+                                        music_spec.format, music_spec.channels, music_spec.freq);
+     if (!music->stream) {
++        SDL_free(music->buffer);
++        music->buffer      = NULL;
++        music->buffer_size = 0;
+         return -1;
+     }
+ 
+-    music->buffer_size = music_spec.samples * (int)sizeof(float) * vi.channels;
+-    if (music->buffer_size <= 0) {
++    new_buffer_size = music_spec.samples * (int)sizeof(float) * vi.channels;
++    if (new_buffer_size <= 0) {
++        music->buffer      = NULL;
++        music->buffer_size = 0;
+         return -1;
+     }
+ 
+-    music->buffer = (char *)SDL_malloc((size_t)music->buffer_size);
+-    if (!music->buffer) {
+-        return -1;
++    /* Note: never shrink the buffer, we just decoded data in there. */
++    if (new_buffer_size > music->buffer_size) {
++        char *new_buffer = (char *)SDL_realloc(music->buffer, new_buffer_size);
++        if (!new_buffer) {
++            SDL_free(music->buffer);
++            music->buffer      = NULL;
++            music->buffer_size = 0;
++            return -1;
++        }
++        music->buffer      = new_buffer;
++        music->buffer_size = new_buffer_size;
+     }
+     return 0;
+ }
+@@ -175,7 +185,6 @@
+     }
+     music->src = src;
+     music->volume = MIX_MAX_VOLUME;
+-    music->section = -1;
+ 
+     music->vf = stb_vorbis_open_rwops(src, 0, &error, NULL);
+ 
+@@ -308,8 +317,7 @@
+ {
+     OGG_music *music = (OGG_music *)context;
+     SDL_bool looped = SDL_FALSE;
+-    int filled, amount, result;
+-    int section;
++    int filled, amount, samples, result;
+     Sint64 pcmPos;
+ 
+     filled = SDL_AudioStreamGet(music->stream, data, bytes);
+@@ -323,20 +331,20 @@
+         return 0;
+     }
+ 
+-    section = music->section;
+-    amount = stb_vorbis_get_samples_float_interleaved(music->vf,
+-                                                music->vi.channels,
+-                                                (float *)music->buffer,
+-                                                music_spec.samples * music->vi.channels);
++    samples = stb_vorbis_get_samples_float_interleaved(music->vf,
++                                                       music->vi.channels,
++                                                       (float *)music->buffer,
++                                                       music->buffer_size / (int)sizeof(float));
+ 
+-    amount *= music->vi.channels * sizeof(float);
++    if (OGG_UpdateSection(music) < 0) {
++        return -1;
++    }
+ 
+-    if (section != music->section) {
+-        music->section = section;
+-        if (OGG_UpdateSection(music) < 0) {
+-            return -1;
+-        }
+-    }
++    amount = samples * music->vi.channels * sizeof(float);
++
++    remap_channels_vorbis_flt((float *)music->buffer,
++                              samples * music->vi.channels,
++                              music->vi.channels);
+ 
+     pcmPos = stb_vorbis_get_playback_sample_offset(music->vf);
+     if (music->loop && (music->play_count != 1) && (pcmPos >= music->loop_end)) {
+diff --git a/src/codecs/music_opus.c b/src/codecs/music_opus.c
+--- a/src/codecs/music_opus.c
++++ b/src/codecs/music_opus.c
+@@ -26,6 +26,7 @@
+ #include "SDL_loadso.h"
+ 
+ #include "music_opus.h"
++#include "remap_channels.h"
+ #include "utils.h"
+ 
+ #ifdef OPUSFILE_HEADER
+@@ -169,6 +170,7 @@
+ static int OPUS_UpdateSection(OPUS_music *music)
+ {
+     const OpusHead *op_info;
++    int new_buffer_size;
+ 
+     op_info = opus.op_head(music->of, -1);
+     if (!op_info) {
+@@ -180,11 +182,6 @@
+     }
+     music->op_info = op_info;
+ 
+-    if (music->buffer) {
+-        SDL_free(music->buffer);
+-        music->buffer = NULL;
+-    }
+-
+     if (music->stream) {
+         SDL_FreeAudioStream(music->stream);
+         music->stream = NULL;
+@@ -193,13 +190,25 @@
+     music->stream = SDL_NewAudioStream(AUDIO_S16SYS, (Uint8)op_info->channel_count, 48000,
+                                        music_spec.format, music_spec.channels, music_spec.freq);
+     if (!music->stream) {
++        SDL_free(music->buffer);
++        music->buffer      = NULL;
++        music->buffer_size = 0;
+         return -1;
+     }
+ 
+-    music->buffer_size = (int)music_spec.samples * (int)sizeof(opus_int16) * op_info->channel_count;
+-    music->buffer = (char *)SDL_malloc((size_t)music->buffer_size);
+-    if (!music->buffer) {
+-        return -1;
++    new_buffer_size = (int)music_spec.samples * (int)sizeof(opus_int16) * op_info->channel_count;
++
++    /* Note: never shrink the buffer, we just decoded data in there. */
++    if (new_buffer_size > music->buffer_size) {
++        char *new_buffer = (char *)SDL_realloc(music->buffer, (size_t)new_buffer_size);
++        if (!new_buffer) {
++            SDL_free(music->buffer);
++            music->buffer      = NULL;
++            music->buffer_size = 0;
++            return -1;
++        }
++        music->buffer      = new_buffer;
++        music->buffer_size = new_buffer_size;
+     }
+     return 0;
+ }
+@@ -378,6 +387,12 @@
+         }
+     }
+ 
++    if (music->op_info->mapping_family == 1) {
++        remap_channels_vorbis_s16((Sint16 *)music->buffer,
++                                  samples * music->op_info->channel_count,
++                                  music->op_info->channel_count);
++    }
++
+     pcmPos = opus.op_pcm_tell(music->of);
+     if (music->loop && (music->play_count != 1) && (pcmPos >= music->loop_end)) {
+         samples -= (int)((pcmPos - music->loop_end) * music->op_info->channel_count) * (int)sizeof(Sint16);
+diff --git a/src/codecs/music_wavpack.c b/src/codecs/music_wavpack.c
+--- a/src/codecs/music_wavpack.c
++++ b/src/codecs/music_wavpack.c
+@@ -326,6 +326,10 @@
+     file2 = SDL_stack_alloc(char, len + 2);
+     if (!file2) src2 = NULL;
+     else {
++        /* this assumes 'file' is a good boy and has 'wv' as an extension.
++         * official wavpack command line tools do the same thing so I'm not
++         * doing anything extra. besides, the wavpack library validates the
++         * correction file, therefore, no harm done.  */
+         SDL_memcpy(file2, file, len);
+         file2[len] =  'c';
+         file2[len + 1] = '\0';
+diff --git a/src/codecs/music_xmp.c b/src/codecs/music_xmp.c
+--- a/src/codecs/music_xmp.c
++++ b/src/codecs/music_xmp.c
+@@ -150,7 +150,7 @@
+ static int XMP_Seek(void *ctx, double pos);
+ static void XMP_Delete(void *ctx);
+ 
+-static void libxmp_set_error(int e)
++static int libxmp_set_error(int e)
+ {
+     const char *msg;
+     switch (e) {
+@@ -179,7 +179,7 @@
+         msg = "Unknown error";
+         break;
+     }
+-    Mix_SetError("XMP: %s", msg);
++    return Mix_SetError("XMP: %s", msg);
+ }
+ 
+ static unsigned long xmp_fread(void *dst, unsigned long len, unsigned long nmemb, void *src)
+@@ -372,7 +372,13 @@
+ static int XMP_Jump(void *context, int order)
+ {
+     XMP_Music *music = (XMP_Music *)context;
+-    return libxmp.xmp_set_position(music->ctx, order);
++    int err = libxmp.xmp_set_position(music->ctx, order);
++    switch (err) {
++    case -XMP_ERROR_STATE:
++    case -XMP_ERROR_INVALID:
++        return libxmp_set_error(err);
++    }
++    return 0;
+ }
+ 
+ /* Jump (seek) to a given position */
+diff --git a/src/codecs/remap_channels.c b/src/codecs/remap_channels.c
+new file mode 100644
+--- /dev/null
++++ b/src/codecs/remap_channels.c
+@@ -0,0 +1,312 @@
++/*
++  SDL_mixer:  An audio mixer library based on the SDL library
++  Copyright (C) 2026 Daniel K. O. <github.com/dkosmari>
++
++  This software is provided 'as-is', without any express or implied
++  warranty.  In no event will the authors be held liable for any damages
++  arising from the use of this software.
++
++  Permission is granted to anyone to use this software for any purpose,
++  including commercial applications, and to alter it and redistribute it
++  freely, subject to the following restrictions:
++
++  1. The origin of this software must not be misrepresented; you must not
++     claim that you wrote the original software. If you use this software
++     in a product, an acknowledgment in the product documentation would be
++     appreciated but is not required.
++  2. Altered source versions must be plainly marked as such, and must not be
++     misrepresented as being the original software.
++  3. This notice may not be removed or altered from any source distribution.
++*/
++
++/*
++ * Comparison of channel orders:
++ *
++ * |  Num. | chan. | SDL | FLAC | MS/USB | Vorbis |
++ * |------:|------:|-----|------|--------|--------|
++ * |     2 |     1 | FL  | FL   | FL     | FL     |
++ * |       |     2 | FR  | FR   | FR     | FR     |
++ * |-------|-------|-----|------|--------|--------|
++ * |     3 |     1 | FL  | FL   | FL     | FL     |
++ * |       |     2 | FR  | FR   | FR     | FC     |
++ * |       |     3 | LFE | FC   | FC/LFE | FR     |
++ * |-------|-------|-----|------|--------|--------|
++ * |     4 |     1 | FL  | FL   | FL     | FL     |
++ * |       |     2 | FR  | FR   | FR     | FR     |
++ * |       |     3 | RL  | RL   | RL     | RL     |
++ * |       |     4 | RR  | RR   | RR     | RR     |
++ * |-------|-------|-----|------|--------|--------|
++ * |     5 |     1 | FL  | FL   | FL     | FL     |
++ * | (5.0) |     2 | FR  | FR   | FR     | FC     |
++ * |       |     3 | LFE | FC   | FC/LFE | FR     |
++ * |       |     4 | RL  | RL   | RL     | RL     |
++ * |       |     5 | RR  | RR   | RR     | RR     |
++ * |-------|-------|-----|------|--------|--------|
++ * |     6 |     1 | FL  | FL   | FL     | FL     |
++ * | (5.1) |     2 | FR  | FR   | FR     | FC     |
++ * |       |     3 | FC  | FC   | FC     | FR     |
++ * |       |     4 | LFE | LFE  | LFE    | RL     |
++ * |       |     5 | RL  | RL   | RR     | RR     |
++ * |       |     6 | RR  | RR   | RR     | LFE    |
++ * |-------|-------|-----|------|--------|--------|
++ * |     7 |     1 | FL  | FL   | FL     | FL     |
++ * |       |     2 | FR  | FR   | FR     | FC     |
++ * |       |     3 | FC  | FC   | FC     | FR     |
++ * |       |     4 | LFE | LFE  | LFE    | SL     |
++ * |       |     5 | RC  | RC   | RC     | SR     |
++ * |       |     6 | SL  | SL   | SL     | RC     |
++ * |       |     7 | SR  | SR   | SR     | LFE    |
++ * |-------|-------|-----|------|--------|--------|
++ * |     8 |     1 | FL  | FL   | FL     | FL     |
++ * | (7.1) |     2 | FR  | FR   | FR     | FC     |
++ * |       |     3 | FC  | FC   | FC     | FR     |
++ * |       |     4 | LFE | LFE  | LFE    | SL     |
++ * |       |     5 | RL  | RL   | RL     | SR     |
++ * |       |     6 | RR  | RR   | RR     | RL     |
++ * |       |     7 | SL  | SL   | SL     | RR     |
++ * |       |     8 | SR  | SR   | SR     | LFE    |
++ *
++ *
++ * **Note:** USB/MS use a bitmask to indicate which channels are present. The only
++ * requirement is that they must appear in a fixed order, if present:
++ *
++ *   - FL (Front Center)
++ *   - FR (Front Right)
++ *   - FC (Front Center)
++ *   - LFE (Low Frequency Enhancement)
++ *   - BL (Back Left) aka RL (Rear LEft)
++ *   - BR (Back Right) aka RR (Rear Right)
++ *   - FLC (Front Left of Center)
++ *   - FRC (Front Right of Center)
++ *   - BC (Back Center) aka RC (Rear Center)
++ *   - SL (Side Left)
++ *   - SR (Side Right)
++ *   - TC (Top Center)
++ *   - TFL (Top Front Left)
++ *   - TFC (Top Front Center)
++ *   - TFR (Top Front Right)
++ *   - TBL (Top Back Left)
++ *   - TBC (Top Back Center)
++ *   - TBR (Top Back Right)
++ *
++ *
++ * **Note:** WavPack documentation claims that ALL MS/USB channels (up to the max) must be
++ * present. So to contain all the 7.1 channels, a .wv file must have 11 channels, with
++ * silent FLC, FRC, BC/RC channels.
++ *
++ *
++ * Sources:
++ *   - Vorbis: https://www.rfc-editor.org/rfc/rfc7845.html#section-5.1.1.2
++ *   - SDL: https://github.com/libsdl-org/SDL/blob/main/include/SDL3/SDL_audio.h
++ *   - FLAC: https://www.rfc-editor.org/rfc/rfc9639.html#name-channels-bits
++ *   - WavPack (WV): https://www.wavpack.com/wavpack_doc.html
++ *   - USB: https://www.usb.org/sites/default/files/audio10.pdf (see "3.7.2.3 Audio Channel Cluster Format")
++ *   - MS: https://learn.microsoft.com/en-us/windows/win32/api/mmreg/ns-mmreg-waveformatextensible
++ */
++
++#include "remap_channels.h"
++
++
++static void remap_channels_vorbis_3_s16(Sint16 *samples, int num_samples)
++{
++    /* Note: this isn't perfect, because we map FC to LFE */
++    int i;
++    for (i = 0; i < num_samples; i += 3) {
++        Sint16 FC = samples[i + 1];
++        Sint16 FR = samples[i + 2];
++        samples[i + 1] = FR;
++        samples[i + 2] = FC;
++    }
++}
++
++static void remap_channels_vorbis_3_flt(float *samples, int num_samples)
++{
++    /* Note: this isn't perfect, because we map FC to LFE */
++    int i;
++    for (i = 0; i < num_samples; i += 3) {
++        float FC = samples[i + 1];
++        float FR = samples[i + 2];
++        samples[i + 1] = FR;
++        samples[i + 2] = FC;
++    }
++}
++
++static void remap_channels_vorbis_5_s16(Sint16 *samples, int num_samples)
++{
++    /* Note: this isn't perfect, because we map FC to LFE. */
++    int i;
++    for (i = 0; i < num_samples; i += 5) {
++        Sint16 FC = samples[i + 1];
++        Sint16 FR = samples[i + 2];
++        samples[i + 1] = FR;
++        samples[i + 2] = FC;
++    }
++}
++
++static void remap_channels_vorbis_5_flt(float *samples, int num_samples)
++{
++    /* Note: this isn't perfect, because we map FC to LFE. */
++    int i;
++    for (i = 0; i < num_samples; i += 5) {
++        float FC = samples[i + 1];
++        float FR = samples[i + 2];
++        samples[i + 1] = FR;
++        samples[i + 2] = FC;
++    }
++}
++
++static void remap_channels_vorbis_5_1_s16(Sint16 *samples, int num_samples)
++{
++    int i;
++    for (i = 0; i < num_samples; i += 6) {
++        Sint16 FC  = samples[i + 1];
++        Sint16 FR  = samples[i + 2];
++        Sint16 RL  = samples[i + 3];
++        Sint16 RR  = samples[i + 4];
++        Sint16 LFE = samples[i + 5];
++        samples[i + 1] = FR;
++        samples[i + 2] = FC;
++        samples[i + 3] = LFE;
++        samples[i + 4] = RL;
++        samples[i + 5] = RR;
++    }
++}
++
++static void remap_channels_vorbis_5_1_flt(float *samples, int num_samples)
++{
++    int i;
++    for (i = 0; i < num_samples; i += 6) {
++        float FC  = samples[i + 1];
++        float FR  = samples[i + 2];
++        float RL  = samples[i + 3];
++        float RR  = samples[i + 4];
++        float LFE = samples[i + 5];
++        samples[i + 1] = FR;
++        samples[i + 2] = FC;
++        samples[i + 3] = LFE;
++        samples[i + 4] = RL;
++        samples[i + 5] = RR;
++    }
++}
++
++static void remap_channels_vorbis_7_s16(Sint16 *samples, int num_samples)
++{
++    int i = 0;
++    for (i = 0; i < num_samples; i += 7) {
++        Sint16 FC  = samples[i + 1];
++        Sint16 FR  = samples[i + 2];
++        Sint16 SL  = samples[i + 3];
++        Sint16 SR  = samples[i + 4];
++        Sint16 RC  = samples[i + 5];
++        Sint16 LFE = samples[i + 6];
++        samples[i + 1] = FR;
++        samples[i + 2] = FC;
++        samples[i + 3] = LFE;
++        samples[i + 4] = RC;
++        samples[i + 5] = SL;
++        samples[i + 6] = SR;
++    }
++}
++
++static void remap_channels_vorbis_7_flt(float *samples, int num_samples)
++{
++    int i = 0;
++    for (i = 0; i < num_samples; i += 7) {
++        float FC  = samples[i + 1];
++        float FR  = samples[i + 2];
++        float SL  = samples[i + 3];
++        float SR  = samples[i + 4];
++        float RC  = samples[i + 5];
++        float LFE = samples[i + 6];
++        samples[i + 1] = FR;
++        samples[i + 2] = FC;
++        samples[i + 3] = LFE;
++        samples[i + 4] = RC;
++        samples[i + 5] = SL;
++        samples[i + 6] = SR;
++    }
++}
++
++static void remap_channels_vorbis_7_1_s16(Sint16 *samples, int num_samples)
++{
++    int i = 0;
++    for (i = 0; i < num_samples; i += 8) {
++        Sint16 FC  = samples[i + 1];
++        Sint16 FR  = samples[i + 2];
++        Sint16 SL  = samples[i + 3];
++        Sint16 SR  = samples[i + 4];
++        Sint16 RL  = samples[i + 5];
++        Sint16 RR  = samples[i + 6];
++        Sint16 LFE = samples[i + 7];
++        samples[i + 1] = FR;
++        samples[i + 2] = FC;
++        samples[i + 3] = LFE;
++        samples[i + 4] = RL;
++        samples[i + 5] = RR;
++        samples[i + 6] = SL;
++        samples[i + 7] = SR;
++    }
++}
++
++static void remap_channels_vorbis_7_1_flt(float *samples, int num_samples)
++{
++    int i = 0;
++    for (i = 0; i < num_samples; i += 8) {
++        float FC  = samples[i + 1];
++        float FR  = samples[i + 2];
++        float SL  = samples[i + 3];
++        float SR  = samples[i + 4];
++        float RL  = samples[i + 5];
++        float RR  = samples[i + 6];
++        float LFE = samples[i + 7];
++        samples[i + 1] = FR;
++        samples[i + 2] = FC;
++        samples[i + 3] = LFE;
++        samples[i + 4] = RL;
++        samples[i + 5] = RR;
++        samples[i + 6] = SL;
++        samples[i + 7] = SR;
++    }
++}
++
++void remap_channels_vorbis_s16(Sint16 *samples, int num_samples, int num_channels)
++{
++    switch (num_channels) {
++    case 3:
++        remap_channels_vorbis_3_s16(samples, num_samples);
++        break;
++    case 5:
++        remap_channels_vorbis_5_s16(samples, num_samples);
++        break;
++    case 6:
++        remap_channels_vorbis_5_1_s16(samples, num_samples);
++        break;
++    case 7:
++        remap_channels_vorbis_7_s16(samples, num_samples);
++        break;
++    case 8:
++        remap_channels_vorbis_7_1_s16(samples, num_samples);
++        break;
++    }
++}
++
++void remap_channels_vorbis_flt(float *samples, int num_samples, int num_channels)
++{
++    switch (num_channels) {
++    case 3:
++        remap_channels_vorbis_3_flt(samples, num_samples);
++        break;
++    case 5:
++        remap_channels_vorbis_5_flt(samples, num_samples);
++        break;
++    case 6:
++        remap_channels_vorbis_5_1_flt(samples, num_samples);
++        break;
++    case 7:
++        remap_channels_vorbis_7_flt(samples, num_samples);
++        break;
++    case 8:
++        remap_channels_vorbis_7_1_flt(samples, num_samples);
++        break;
++    }
++}
+diff --git a/src/codecs/remap_channels.h b/src/codecs/remap_channels.h
+new file mode 100644
+--- /dev/null
++++ b/src/codecs/remap_channels.h
+@@ -0,0 +1,31 @@
++/*
++  SDL_mixer:  An audio mixer library based on the SDL library
++  Copyright (C) 2026 Daniel K. O. <github.com/dkosmari>
++
++  This software is provided 'as-is', without any express or implied
++  warranty.  In no event will the authors be held liable for any damages
++  arising from the use of this software.
++
++  Permission is granted to anyone to use this software for any purpose,
++  including commercial applications, and to alter it and redistribute it
++  freely, subject to the following restrictions:
++
++  1. The origin of this software must not be misrepresented; you must not
++     claim that you wrote the original software. If you use this software
++     in a product, an acknowledgment in the product documentation would be
++     appreciated but is not required.
++  2. Altered source versions must be plainly marked as such, and must not be
++     misrepresented as being the original software.
++  3. This notice may not be removed or altered from any source distribution.
++*/
++
++#ifndef REMAP_CHANNELS_H_
++#define REMAP_CHANNELS_H_
++
++#include "SDL_types.h"
++
++extern void remap_channels_vorbis_s16(Sint16 *samples, int num_samples, int num_channels);
++
++extern void remap_channels_vorbis_flt(float *samples, int num_samples, int num_channels);
++
++#endif /* REMAP_CHANNELS_H_ */
+diff --git a/src/codecs/stb_vorbis/stb_vorbis.h b/src/codecs/stb_vorbis/stb_vorbis.h
+--- a/src/codecs/stb_vorbis/stb_vorbis.h
++++ b/src/codecs/stb_vorbis/stb_vorbis.h
+@@ -308,6 +308,7 @@
+ #ifdef STB_VORBIS_SDL
+ extern stb_vorbis * stb_vorbis_open_rwops_section(SDL_RWops *rwops, int close_on_free, int *error, const stb_vorbis_alloc *alloc, unsigned int length);
+ extern stb_vorbis * stb_vorbis_open_rwops(SDL_RWops *rwops, int close_on_free, int *error, const stb_vorbis_alloc *alloc);
++#define RWOPS_BUFFER_SIZE 2048
+ #endif
+ 
+ extern int stb_vorbis_seek_frame(stb_vorbis *f, unsigned int sample_number);
+@@ -620,8 +621,10 @@
+ #include <limits.h>
+ 
+ #ifndef STB_FORCEINLINE
+-    #if defined(_MSC_VER)
++    #if defined(_MSC_VER) && (_MSC_VER >= 1200)
+         #define STB_FORCEINLINE __forceinline
++    #elif defined(_MSC_VER)
++        #define STB_FORCEINLINE static __inline
+     #elif (defined(__GNUC__) && (__GNUC__ > 3 || (__GNUC__ == 3 && __GNUC_MINOR__ >= 2))) || defined(__clang__)
+         #define STB_FORCEINLINE static __inline __attribute__((always_inline))
+     #else
+@@ -834,12 +837,16 @@
+ #ifdef STB_VORBIS_SDL
+    SDL_RWops *rwops;
+    uint32 rwops_start;
++   uint32 rwops_virtual_pos;
++   uint32 rwops_buffer_pos;
++   uint32 rwops_buffer_fill;
++   uint8 rwops_buffer[RWOPS_BUFFER_SIZE];
+    int close_on_free;
+ #endif
+ 
+-   uint8 *stream;
+-   uint8 *stream_start;
+-   uint8 *stream_end;
++   const uint8 *stream;
++   const uint8 *stream_start;
++   const uint8 *stream_end;
+ 
+    uint32 stream_len;
+ 
+@@ -1079,7 +1086,7 @@
+ // @OPTIMIZE: called multiple times per-packet with "constants"; move to setup
+ static int ilog(int32 n)
+ {
+-   static signed char log2_4[16] = { 0,1,2,2,3,3,3,3,4,4,4,4,4,4,4,4 };
++   static const signed char log2_4[16] = { 0,1,2,2,3,3,3,3,4,4,4,4,4,4,4,4 };
+ 
+    if (n < 0) return 0; // signed n returns 0
+ 
+@@ -1216,8 +1223,8 @@
+ 
+ static int STBV_CDECL uint32_compare(const void *p, const void *q)
+ {
+-   uint32 x = * (uint32 *) p;
+-   uint32 y = * (uint32 *) q;
++   uint32 x = * (const uint32 *) p;
++   uint32 y = * (const uint32 *) q;
+    return x < y ? -1 : x > y;
+ }
+ 
+@@ -1287,7 +1294,7 @@
+ // only run while parsing the header (3 times)
+ static int vorbis_validate(uint8 *data)
+ {
+-   static uint8 vorbis[6] = { 'v', 'o', 'r', 'b', 'i', 's' };
++   static const uint8 vorbis[6] = { 'v', 'o', 'r', 'b', 'i', 's' };
+    return memcmp(data, vorbis, 6) == 0;
+ }
+ 
+@@ -1378,8 +1385,8 @@
+ 
+ static int STBV_CDECL point_compare(const void *p, const void *q)
+ {
+-   stbv__floor_ordering *a = (stbv__floor_ordering *) p;
+-   stbv__floor_ordering *b = (stbv__floor_ordering *) q;
++   const stbv__floor_ordering *a = (const stbv__floor_ordering *) p;
++   const stbv__floor_ordering *b = (const stbv__floor_ordering *) q;
+    return a->x < b->x ? -1 : a->x > b->x;
+ }
+ 
+@@ -1398,9 +1405,13 @@
+ static uint8 get8(vorb *z)
+ {
+    #ifdef STB_VORBIS_SDL
+-   uint8 c;
+-   if (SDL_RWread(z->rwops, &c, 1, 1) != 1) { z->eof = TRUE; return 0; }
+-   return c;
++   if (z->rwops_buffer_pos >= z->rwops_buffer_fill) {
++      z->rwops_buffer_fill = SDL_RWread(z->rwops, z->rwops_buffer, 1, RWOPS_BUFFER_SIZE);
++      z->rwops_buffer_pos = 0;
++      if (z->rwops_buffer_fill == 0) { z->eof = TRUE; return 0; }
++   }
++   z->rwops_virtual_pos++;
++   return z->rwops_buffer[z->rwops_buffer_pos++];
+ 
+    #else
+    if (USE_MEMORY(z)) {
+@@ -1431,9 +1442,28 @@
+ static int getn(vorb *z, uint8 *data, int n)
+ {
+    #ifdef STB_VORBIS_SDL
+-   if (SDL_RWread(z->rwops, data, n, 1) == 1) return 1;
+-   z->eof = 1;
+-   return 0;
++   while (n > 0) {
++      int chunk;
++
++      if (z->rwops_buffer_pos >= z->rwops_buffer_fill) {
++         z->rwops_buffer_fill = SDL_RWread(z->rwops, z->rwops_buffer, 1, RWOPS_BUFFER_SIZE);
++         z->rwops_buffer_pos = 0;
++         if (z->rwops_buffer_fill == 0) {
++            z->eof = 1;
++            return 0;
++         }
++      }
++
++      chunk = z->rwops_buffer_fill - z->rwops_buffer_pos;
++      if (chunk > n) chunk = n;
++
++      memcpy(data, z->rwops_buffer + z->rwops_buffer_pos, chunk);
++      z->rwops_buffer_pos += chunk;
++      z->rwops_virtual_pos += chunk;
++      data += chunk;
++      n -= chunk;
++   }
++   return 1;
+ 
+    #else
+    if (USE_MEMORY(z)) {
+@@ -1454,11 +1484,12 @@
+    #endif
+ }
+ 
++static int set_file_offset(stb_vorbis *f, unsigned int loc);
++
+ static void skip(vorb *z, int n)
+ {
+    #ifdef STB_VORBIS_SDL
+-   SDL_RWseek(z->rwops, n, RW_SEEK_CUR);
+-
++   set_file_offset(z, z->rwops_virtual_pos + n);
+    #else
+    if (USE_MEMORY(z)) {
+       z->stream += n;
+@@ -1483,17 +1514,31 @@
+    f->eof = 0;
+ 
+    #ifdef STB_VORBIS_SDL
+-   if (loc + f->rwops_start < loc || loc >= 0x80000000) {
+-      loc = 0x7fffffff;
++ { unsigned int rwops_pos;
++   uint32 buffer_start = f->rwops_virtual_pos - f->rwops_buffer_pos;
++   uint32 buffer_end = buffer_start + f->rwops_buffer_fill;
++   f->rwops_virtual_pos = loc;
++
++   // Move within buffer if possible
++   if (loc >= buffer_start && loc < buffer_end)
++   {
++      f->rwops_buffer_pos = loc - buffer_start;
++      return 1;
++   }
++
++   rwops_pos = loc + f->rwops_start;
++   if (rwops_pos < loc || loc >= 0x80000000) {
++      rwops_pos = 0x7fffffff;
+       f->eof = 1;
+-   } else {
+-      loc += f->rwops_start;
+    }
+-   if (SDL_RWseek(f->rwops, loc, RW_SEEK_SET) != -1)
++
++   f->rwops_buffer_pos = f->rwops_buffer_fill = 0;  // Invalidate buffer
++   if (SDL_RWseek(f->rwops, rwops_pos, RW_SEEK_SET) != -1)
+       return 1;
+    f->eof = 1;
+    SDL_RWseek(f->rwops, f->rwops_start, RW_SEEK_END);
+    return 0;
++ }
+ 
+    #else
+    if (USE_MEMORY(f)) {
+@@ -1524,7 +1569,7 @@
+ }
+ 
+ 
+-static uint8 ogg_page_header[4] = { 0x4f, 0x67, 0x67, 0x53 };
++static const uint8 ogg_page_header[4] = { 0x4f, 0x67, 0x67, 0x53 };
+ 
+ static int capture_pattern(vorb *f)
+ {
+@@ -2045,7 +2090,7 @@
+ }
+ 
+ // the following table is block-copied from the specification
+-static float inverse_db_table[256] =
++static const float inverse_db_table[256] =
+ {
+   1.0649863e-07f, 1.1341951e-07f, 1.2079015e-07f, 1.2863978e-07f,
+   1.3699951e-07f, 1.4590251e-07f, 1.5538408e-07f, 1.6548181e-07f,
+@@ -3308,7 +3353,7 @@
+          if (get_bits(f, 1)) {
+             short *finalY;
+             uint8 step2_flag[256];
+-            static int range_list[4] = { 256, 128, 86, 64 };
++            static const int range_list[4] = { 256, 128, 86, 64 };
+             int range = range_list[g->floor1_multiplier-1];
+             int offset = 2;
+             finalY = f->finalY[i];
+@@ -3631,7 +3676,7 @@
+    // of state to restore (primarily the page segment table)
+ 
+    int s = f->next_seg, first = TRUE;
+-   uint8 *p = f->stream;
++   const uint8 *p = f->stream;
+ 
+    if (s != -1) { // if we're not starting the packet with a 'continue on next page' flag
+       for (; s < f->segment_count; ++s) {
+@@ -3646,7 +3691,7 @@
+       first = FALSE;
+    }
+    for (; s == -1;) {
+-      uint8 *q;
++      const uint8 *q;
+       int n;
+ 
+       // check that we have the page header ready
+@@ -4438,6 +4483,10 @@
+    #ifdef STB_VORBIS_SDL
+    p->close_on_free = FALSE;
+    p->rwops = NULL;
++   p->rwops_start = 0;
++   p->rwops_virtual_pos = 0;
++   p->rwops_buffer_pos = 0;
++   p->rwops_buffer_fill = 0;
+    #endif
+    #ifndef STB_VORBIS_NO_STDIO
+    p->close_on_free = FALSE;
+@@ -4511,7 +4560,7 @@
+    f->channel_buffer_end = 0;
+ }
+ 
+-static int vorbis_search_for_page_pushdata(vorb *f, uint8 *data, int data_len)
++static int vorbis_search_for_page_pushdata(vorb *f, const uint8 *data, int data_len)
+ {
+    int i,n;
+    for (i=0; i < f->page_crc_tests; ++i)
+@@ -4617,11 +4666,11 @@
+ 
+    if (f->page_crc_tests >= 0) {
+       *samples = 0;
+-      return vorbis_search_for_page_pushdata(f, (uint8 *) data, data_len);
++      return vorbis_search_for_page_pushdata(f, data, data_len);
+    }
+ 
+-   f->stream     = (uint8 *) data;
+-   f->stream_end = (uint8 *) data + data_len;
++   f->stream     = (const uint8 *) data;
++   f->stream_end = (const uint8 *) data + data_len;
+    f->error      = VORBIS__no_error;
+ 
+    // check that we have the entire packet in memory
+@@ -4679,8 +4728,8 @@
+ {
+    stb_vorbis *f, p;
+    vorbis_init(&p, alloc);
+-   p.stream     = (uint8 *) data;
+-   p.stream_end = (uint8 *) data + data_len;
++   p.stream     = (const uint8 *) data;
++   p.stream_end = (const uint8 *) data + data_len;
+    p.push_mode  = TRUE;
+    if (!start_decoder(&p)) {
+       if (p.eof)
+@@ -4709,7 +4758,7 @@
+    if (f->push_mode) return 0;
+    #endif
+    #ifdef STB_VORBIS_SDL
+-   return (unsigned int) (SDL_RWtell(f->rwops) - f->rwops_start);
++   return f->rwops_virtual_pos;
+    #else
+    if (USE_MEMORY(f)) return (unsigned int) (f->stream - f->stream_start);
+    #endif
+@@ -5308,9 +5357,9 @@
+       return NULL;
+    }
+    vorbis_init(&p, alloc);
+-   p.stream = (uint8 *) data;
+-   p.stream_end = (uint8 *) data + len;
+-   p.stream_start = (uint8 *) p.stream;
++   p.stream = (const uint8 *) data;
++   p.stream_end = (const uint8 *) data + len;
++   p.stream_start = (const uint8 *) p.stream;
+    p.stream_len = len;
+    p.push_mode = FALSE;
+    if (start_decoder(&p)) {
+@@ -5336,7 +5385,7 @@
+ #define C  (PLAYBACK_LEFT  | PLAYBACK_RIGHT | PLAYBACK_MONO)
+ #define R  (PLAYBACK_RIGHT | PLAYBACK_MONO)
+ 
+-static int8 channel_position[7][6] =
++static const int8 channel_position[7][6] =
+ {
+    { 0 },
+    { C },
+@@ -5451,7 +5500,7 @@
+ {
+    int i;
+    if (buf_c != data_c && buf_c <= 2 && data_c <= 6) {
+-      static int channel_selector[3][2] = { {0}, {PLAYBACK_MONO}, {PLAYBACK_LEFT, PLAYBACK_RIGHT} };
++      static const int channel_selector[3][2] = { {0}, {PLAYBACK_MONO}, {PLAYBACK_LEFT, PLAYBACK_RIGHT} };
+       for (i=0; i < buf_c; ++i)
+          compute_samples(channel_selector[buf_c][i], buffer[i]+b_offset, data_c, data, d_offset, samples);
+    } else {
+@@ -5518,7 +5567,7 @@
+ 
+    f->current_playback_loc += n;
+    lgs = stb_vorbis_stream_length_in_samples(f);
+-   if (f->current_playback_loc > lgs && lgs > 0 && lgs != SAMPLE_unknown) {
++   if (lgs != 0 && lgs != SAMPLE_unknown && f->current_playback_loc > (int)lgs) {
+        int r = n - (f->current_playback_loc - (int)lgs);
+        f->current_playback_loc = lgs;
+        return r;

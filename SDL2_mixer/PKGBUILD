@@ -1,64 +1,95 @@
 # Maintainer:  Dave Murphy <davem@devkitpro.org>
 
+_pkgname=SDL2_mixer
 pkgname=wiiu-sdl2_mixer
-pkgver=2.6.3
-pkgrel=3
+pkgver=2.8.1
+pkgrel=1
 pkgdesc="A sample multi-channel audio mixer library."
 arch=('any')
-url="https://libsdl.org/projects/SDL_mixer/"
+url="https://libsdl.org/projects/SDL_mixer"
 license=("zlib")
-options=(!strip libtool staticlibs)
-makedepends=('switch-pkg-config' 'dkp-toolchain-vars')
-groups=('wiiu-portlibs' 'wiiu-sdl-libs')
+options=(!buildflags !strip libtool staticlibs)
+makedepends=(
+  'dkp-toolchain-vars'
+  'wiiu-pkg-config'
+)
+groups=(
+  'wiiu-portlibs'
+  'wiiu-sdl2-libs'
+)
 depends=(
-  'wiiu-sdl2'
-  'ppc-libvorbis'
-  'ppc-mpg123'
+  'ppc-flac'
+  'ppc-libgme'
   'ppc-libmodplug'
+  'ppc-libopus'
+  'ppc-libvorbis'
+  'ppc-libwavpack'
+  'ppc-mpg123'
+  'wiiu-sdl2'
 )
 
 source=(
-  "${url}release/SDL2_mixer-${pkgver}.tar.gz"
+  "https://github.com/libsdl-org/SDL_mixer/releases/download/release-${pkgver}/${_pkgname}-${pkgver}.tar.gz"
+  "SDL2_mixer-2.8.1.patch"
 )
 
-sha256sums=(
-  '7a6ba86a478648ce617e3a5e9277181bc67f7ce9876605eea6affd4a0d6eea8f'
-)
+prepare() {
+  cd "${srcdir}/${_pkgname}-${pkgver}"
 
-groups=('wiiu-portlibs' 'wiiu-sdl2-libs')
+  patch -p1 -i ../SDL2_mixer-2.8.1.patch
+
+  # Note: SDL_mixer uses a badly crafted Makefile.in, not Automake, so
+  # we need to patch out their mistakes.
+  sed 's|\$(objects)/play.*mus\$(EXE)||' -i Makefile.in
+}
 
 build() {
-  cd SDL2_mixer-$pkgver
+  source "${DEVKITPRO}/wiiuvars.sh"
 
-  source ${DEVKITPRO}/wiiuvars.sh
+  cd "${srcdir}/${_pkgname}-${pkgver}"
 
-  # patch out compiling playwave and playmus
-  sed 's|\$(objects)/play.*mus\$(EXE)||' -i Makefile.in
+  ./configure \
+      --host=powerpc-eabi \
+      --prefix="${PORTLIBS_PREFIX}" \
+      --disable-shared \
+      --enable-static \
+      --disable-sdltest \
+      --disable-music-cmd \
+      --enable-music-mod-modplug \
+      --disable-music-mod-modplug-shared \
+      --disable-music-mod-xmp \
+      --enable-music-gme \
+      --disable-music-gme-shared \
+      --enable-music-ogg \
+      --disable-music-ogg-stb \
+      --enable-music-ogg-vorbis \
+      --disable-music-ogg-vorbis-shared \
+      --enable-music-flac \
+      --disable-music-flac-drflac \
+      --enable-music-flac-libflac \
+      --disable-music-flac-libflac-shared \
+      --enable-music-mp3 \
+      --disable-music-mp3-minimp3 \
+      --enable-music-mp3-mpg123 \
+      --disable-music-mp3-mpg123-shared \
+      --enable-music-opus \
+      --disable-music-opus-shared \
+      --enable-music-wavpack \
+      --disable-music-wavpack-shared
 
-  sed 's|libSDL2_mixer.la|libSDL2_mixer.a|' -i Makefile.in
-
-
-  LIBS="-lm" ./configure --prefix="${PORTLIBS_PREFIX}" \
-    --host=powerpc-eabi --disable-shared --enable-static \
-    --disable-music-cmd \
-    --disable-music-ogg-shared \
-    --enable-music-mod-modplug \
-    --disable-music-mp3-drmp3 --enable-music-mp3-mpg123 \
-    --disable-music-flac-drflac --enable-music-flac-libflac
-
-  make
+  make build/libSDL2_mixer.la
 }
 
 package() {
-  cd SDL2_mixer-$pkgver
+  source "${DEVKITPRO}/wiiuvars.sh"
 
-  source /opt/devkitpro/wiiuvars.sh
+  cd "${srcdir}/${_pkgname}-${pkgver}"
 
-  make DESTDIR="$pkgdir" install
-
-  # add our static libs
-  echo "Requires.private: libmodplug libmpg123 vorbisfile" >> "${pkgdir}/${PORTLIBS_PREFIX}/lib/pkgconfig/SDL2_mixer.pc"
+  make install-hdrs install-lib DESTDIR="${pkgdir}"
 
   # License
-  install -Dm644 "LICENSE.txt" "${pkgdir}/${PORTLIBS_PREFIX}/licenses/${pkgname}/LICENSE.txt"
+  install -Dm644 -t "${pkgdir}/${PORTLIBS_PREFIX}/licenses/${pkgname}/" LICENSE.txt
 }
+
+sha256sums=('cb760211b056bfe44f4a1e180cc7cb201137e4d1572f2002cc1be728efd22660'
+            '96463369c06525724826cff53769e79490e6bc2f5748abf7dc9d428e73859dab')
